@@ -9,21 +9,26 @@ fun getLocalIpAddress(): String {
     try {
         val interfaces = NetworkInterface.getNetworkInterfaces()
         for (intf in interfaces) {
-            // Ignore loopback, inactive, and virtual adapters (like WSL or VMware)
-            // Update this line inside getLocalIpAddress()
-            if (intf.isLoopback || !intf.isUp || intf.displayName.contains("Virtual") || intf.displayName.contains("Ethernet")) continue
+            // Skip loopback and inactive adapters
+            if (intf.isLoopback || !intf.isUp) continue
 
-            val addresses = intf.inetAddresses
-            for (addr in addresses) {
-                if (addr is Inet4Address) {
-                    return addr.hostAddress
+            val name = intf.displayName.lowercase()
+            val shortName = intf.name.lowercase()
+
+            // Specifically target Wi-Fi adapters (Windows uses "wi-fi" or "wlan")
+            if (name.contains("wi-fi") || name.contains("wireless") || shortName.contains("wlan")) {
+                val addresses = intf.inetAddresses
+                for (addr in addresses) {
+                    if (addr is Inet4Address) {
+                        return addr.hostAddress
+                    }
                 }
             }
         }
     } catch (e: Exception) {
         println("Failed to fetch IP, falling back to localhost")
     }
-    return "10.0.2.2" // Fallback to emulator alias if no network is found
+    return "10.0.2.2" // Fallback to emulator alias
 }
 
 android {
@@ -88,10 +93,12 @@ dependencies {
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.google.mlkit:barcode-scanning:17.2.0")
     implementation("com.google.accompanist:accompanist-permissions:0.35.0-alpha")
-
+    implementation("com.google.android.gms:play-services-location:21.2.0")
+    implementation("com.google.mlkit:face-detection:16.1.6")
     val cameraxVersion = "1.3.4"
     implementation("androidx.camera:camera-core:$cameraxVersion")
     implementation("androidx.camera:camera-camera2:$cameraxVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
     implementation("androidx.camera:camera-view:$cameraxVersion")
+    implementation("androidx.compose.material:material-icons-extended:1.6.0")
 }
