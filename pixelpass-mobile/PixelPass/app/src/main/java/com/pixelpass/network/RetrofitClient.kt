@@ -9,13 +9,22 @@ import retrofit2.http.Body
 import retrofit2.http.POST
 import retrofit2.Response
 import java.util.concurrent.TimeUnit
+import com.pixelpass.network.ScanRequest
+import com.pixelpass.network.ScanResponse
 
-data class LoginRequest(val email: String, val password: String)
+data class LoginRequest(
+    val identifier: String,
+    val password: String,
+    val keepSignedIn: Boolean = true // Default to true or map to a mobile checkbox
+)
 data class LoginResponse(val message: String, val token: String, val role: String)
 
 interface PixelPassApi {
     @POST("api/auth/login")
     suspend fun login(@Body request: LoginRequest): Response<LoginResponse>
+
+    @POST("api/scan")
+    suspend fun verifyScan(@Body request: ScanRequest): Response<ScanResponse>
 }
 
 object RetrofitClient {
@@ -38,7 +47,7 @@ object RetrofitClient {
 
     val instance: PixelPassApi by lazy {
         Retrofit.Builder()
-            // Dynamically pulls the URL based on the current build type (Debug vs Release)
+            // Dynamically pulls the URL based on the current build     type (Debug vs Release)
             .baseUrl(BuildConfig.BASE_URL)
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
