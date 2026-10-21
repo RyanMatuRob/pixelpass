@@ -2,14 +2,18 @@ const mongoose = require('mongoose');
 
 const UserSchema = new mongoose.Schema({
     userId: { type: String, required: true, unique: true },
+    email: { type: String, required: true, unique: true }, // Added for Sign-In
+    password: { type: String, required: true },            // Added for Sign-In
+    phoneNumber: { type: String, unique: true, sparse: true },
     roleCategory: { 
         type: String, 
-        enum: ['STAFF', 'STUDENT', 'VISITOR', 'ADMIN'], 
+        enum: ['STAFF', 'STUDENT', 'VISITOR', 'ADMIN', 'SECURITY'], 
         required: true 
-    }, // Limits privileges
-    facialEmbedding: { type: [Number], default: [] }, // Ready for biometric face match
+    }, // Limits privileges based on the proposal specifications
+    facialEmbedding: { type: [Number], default: [] }, // Biometric placeholder[cite: 6]
     registeredTerminals: [{ type: String }],
-    isActive: { type: Boolean, default: true }
+    isActive: { type: Boolean, default: true },
+    referenceFaceBase64: { type: String, required: false }
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', UserSchema);
