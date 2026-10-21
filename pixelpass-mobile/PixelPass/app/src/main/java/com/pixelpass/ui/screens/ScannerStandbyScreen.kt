@@ -1,42 +1,86 @@
 package com.pixelpass.ui.screens
 
 import android.Manifest
+import androidx.camera.core.CameraSelector
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.isGranted
-import com.google.accompanist.permissions.rememberPermissionState
+import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import com.pixelpass.ui.components.CameraPreview
 import com.pixelpass.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
-fun ScannerStandbyScreen() {
-    val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
+fun ScannerStandbyScreen(
+    onQrScanned: (String) -> Unit,
+    onBackClick: () -> Unit = {}
+) {
+    val context = LocalContext.current
+    val permissionsState = rememberMultiplePermissionsState(
+        permissions = listOf(
+            Manifest.permission.CAMERA,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+    )
 
-    if (!cameraPermissionState.status.isGranted) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text("Camera access is required for scanning.", style = AppTypography.bodyLarge)
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = { cameraPermissionState.launchPermissionRequest() }) {
-                Text("Grant Permission")
+    // Hardware toggle states
+    var isTorchOn by remember { mutableStateOf(false) }
+    var lensFacing by remember { mutableIntStateOf(CameraSelector.LENS_FACING_BACK) }
+
+    if (!permissionsState.allPermissionsGranted) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("Qr Scanner", style = AppTypography.headlineMedium) },
+                    navigationIcon = {
+                        IconButton(onClick = onBackClick) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowBack,
+                                contentDescription = "Back",
+                                tint = NeutralDark
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = SurfaceLight)
+                )
+            },
+            containerColor = SurfaceLight
+        ) { paddingValues ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = "Camera and Location access required for security audit.",
+                    style = AppTypography.bodyLarge,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = { permissionsState.launchMultiplePermissionRequest() },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                ) {
+                    Text("Grant Permissions", color = SurfaceWhite)
+                }
             }
         }
         return
@@ -45,7 +89,16 @@ fun ScannerStandbyScreen() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Qr Scanner", style = AppTypography.headlineMedium) }, //[cite: 4]
+                title = { Text("Qr Scanner", style = AppTypography.headlineMedium) },
+                navigationIcon = {
+                    IconButton(onClick = onBackClick) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Back",
+                            tint = NeutralDark
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = SurfaceLight)
             )
         },
@@ -57,20 +110,20 @@ fun ScannerStandbyScreen() {
                 .padding(paddingValues)
                 .padding(horizontal = 24.dp)
         ) {
-            // Gate Status Indicators[cite: 4]
+            // Gate Status Indicators
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Surface(color = Color(0xFFFEE2E2), shape = RoundedCornerShape(16.dp)) {
-                    Text("● GATE 1 • MAIN PORTAL", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = Color(0xFF991B1B), style = AppTypography.labelLarge) //[cite: 4]
+                    Text("● GATE 1 • MAIN PORTAL", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = Color(0xFF991B1B), style = AppTypography.labelLarge)
                 }
                 Surface(color = Color(0xFFE0E7FF), shape = RoundedCornerShape(16.dp)) {
-                    Text("✔ Active Guard Duty", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = PrimaryBlue, style = AppTypography.labelLarge) //[cite: 4]
+                    Text("✔ Active Guard Duty", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = PrimaryBlue, style = AppTypography.labelLarge)
                 }
             }
 
-            // Camera Viewfinder Box[cite: 4]
+            // Camera Viewfinder Box
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -78,12 +131,17 @@ fun ScannerStandbyScreen() {
                     .clip(RoundedCornerShape(24.dp))
                     .background(Color.Black)
             ) {
-                CameraPreview()
+                // Pass the hardware states down to the Camera component
+                CameraPreview(
+                    lensFacing = lensFacing,
+                    isTorchOn = isTorchOn,
+                    onQrScanned = { scannedJwt -> onQrScanned(scannedJwt) }
+                )
 
                 // Dark overlay to simulate scanning depth
                 Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)))
 
-                // UI Overlay for Target Brackets[cite: 4]
+                // UI Overlay for Target Brackets
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val bracketLength = 60f
                     val strokeWidth = 12f
@@ -106,45 +164,54 @@ fun ScannerStandbyScreen() {
                     drawLine(PrimaryBlue, Offset(size.width - padding, size.height - padding), Offset(size.width - padding, size.height - padding - bracketLength), strokeWidth)
                 }
 
-                // Inner UI Elements[cite: 4]
+                // Inner UI Elements
                 Text(
-                    "⚯ Ultra-Sense AI",
+                    "⚯ Quick Scan",
                     color = Color.White,
                     modifier = Modifier.align(Alignment.TopStart).padding(16.dp)
-                ) //[cite: 4]
+                )
 
                 Text(
                     "Align pass within corner brackets",
                     color = Color.White,
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp)
-                ) //[cite: 4]
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Hardware Toggles[cite: 4]
+            // Hardware Toggles
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(
-                    onClick = { /* TODO: Toggle Torch */ },
+                    onClick = { isTorchOn = !isTorchOn },
                     modifier = Modifier.weight(1f).height(56.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = SurfaceWhite, contentColor = PrimaryBlue),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isTorchOn) PrimaryBlue else SurfaceWhite,
+                        contentColor = if (isTorchOn) SurfaceWhite else PrimaryBlue
+                    ),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Torch Light", style = AppTypography.bodyLarge) //[cite: 4]
+                    Text(if (isTorchOn) "Torch Off" else "Torch Light", style = AppTypography.bodyLarge)
                 }
                 Button(
-                    onClick = { /* TODO: Toggle Lens */ },
+                    onClick = {
+                        lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
+                            CameraSelector.LENS_FACING_FRONT
+                        } else {
+                            CameraSelector.LENS_FACING_BACK
+                        }
+                    },
                     modifier = Modifier.weight(1f).height(56.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = SurfaceWhite, contentColor = PrimaryBlue),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Switch Lens", style = AppTypography.bodyLarge) //[cite: 4]
+                    Text("Switch Lens", style = AppTypography.bodyLarge)
                 }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Fallback PIN Entry Card[cite: 4]
+            // Fallback PIN Entry Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
@@ -152,7 +219,7 @@ fun ScannerStandbyScreen() {
                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("● Scanner Standby", color = PrimaryBlue, style = AppTypography.labelLarge) //[cite: 4]
+                    Text("● Scanner Standby", color = PrimaryBlue, style = AppTypography.labelLarge)
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -160,15 +227,15 @@ fun ScannerStandbyScreen() {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text("Badge damaged or faded?", style = AppTypography.bodyLarge) //[cite: 4]
-                            Text("Key in 8-digit access credential", color = Color.Gray, style = AppTypography.bodySmall) //[cite: 4]
+                            Text("Badge damaged or faded?", style = AppTypography.bodyLarge)
+                            Text("Key in 8-digit access credential", color = Color.Gray, style = AppTypography.bodySmall)
                         }
                         Button(
                             onClick = { /* TODO: Open PIN Dialog */ },
                             colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
                             shape = RoundedCornerShape(8.dp)
                         ) {
-                            Text("Enter PIN", color = SurfaceWhite) //[cite: 4]
+                            Text("Enter PIN", color = SurfaceWhite)
                         }
                     }
                 }
