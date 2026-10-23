@@ -12,8 +12,11 @@ Read that file before acting. It is authoritative for commit messages, branch na
 
 The essentials it requires:
 
-- Commit format: `<type>(<scope>): <short summary> [#<issue-number>]`. The issue suffix is mandatory for all non-merge commits; if no issue number is available, pause and request the mapping before committing.
-- Branch names: `<type>/<scope>-<short-description>` using feat, fix, chore, docs, refactor, test, perf, ci, build, hotfix, or release.
+- Commit format: `<type>(<scope>): <two or three word summary> [#<issue-number>]`. The bracketed issue suffix is mandatory on every non-merge, non-revert commit; if no issue number applies, pause and request the mapping before committing.
+- Branch names: `<type>/<scope>-<short-description>` using feat, bugfix, hotfix, design, refactor, test, doc, chore, perf, ci, build, or release. No issue numbers in branch names, and no branch per issue.
+- Roadmap: exactly four milestones, `1. Mobile App Implementation`, `2. Machine Learning Model`, `3. Backend Implementation`, `4. Testing and Deployment`. Every issue carries exactly one of them.
+- Every issue also carries one area label (`mobile`, `backend`, `ml`, `admin`, `testing`, `deployment`, `docs`, `tooling`) and appears on the `PixelPass Roadmap` GitHub Project board.
+- Every issue and pull request gets one row in the running summary table in the agent file (issue, milestone, PR, state, one-line outcome), updated as work lands.
 - All terminal commands must be Windows PowerShell; use semicolons for chaining. Never provide Bash or Linux commands.
 - Map a branch to a specific GitHub issue and milestone before opening a pull request.
 - The default merge strategy for pull requests into develop and main is a merge commit.
