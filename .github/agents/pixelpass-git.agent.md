@@ -412,7 +412,7 @@ Update this table in place during Phase 7. Keep it truthful; `Pending` is a vali
 | Field | Value |
 | --- | --- |
 | Bootstrap state | `Phases 2-4 applied` 2026-10-23; `Phase 5 blocked` (token lacks `project`); `Phase 6 awaiting confirmation` |
-| Last bootstrap | 2026-10-23 |
+| Last bootstrap | 2026-10-23 (PR #59 merged into `develop`) |
 | Repository snapshot verified | 2026-10-23 |
 | Naming rules | adopted as written; recorded exception - a remote branch may be deleted without extra confirmation when its pull request is merged and the branch is contained in `develop` |
 | Labels | applied - 11 delivery labels created with colours and descriptions, 21 total; GitHub's ten defaults kept |
@@ -445,7 +445,7 @@ This is the running summary for every issue and every pull request. It is append
 | #19 | 1. Mobile App Implementation | #27 | Closed | Mobile scaffold and core screens |
 | #20 | 4. Testing and Deployment | #28 | Closed | CI, docs, and repository tooling |
 | #30 | - | - | Closed | Numbering probe; closed as not planned |
-| #31 | 4. Testing and Deployment | - | Open | Bootstrap of labels, milestones, re-homing, and blueprint issues |
+| #31 | 4. Testing and Deployment | #59 | Open | Bootstrap Phases 2-4 applied; board and branch cleanup pending |
 | #32 | 1. Mobile App Implementation | - | Open | Add navigation shell and design system |
 | #33 | 1. Mobile App Implementation | - | Open | Handle camera and location permissions |
 | #34 | 1. Mobile App Implementation | - | Open | Integrate backend API client |
