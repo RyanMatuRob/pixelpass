@@ -454,7 +454,7 @@ This is the running summary for every issue and every pull request. It is append
 | #19 | 1. Mobile App Implementation | #27 | Closed | Mobile scaffold and core screens |
 | #20 | 4. Testing and Deployment | #28 | Closed | CI, docs, and repository tooling |
 | #30 | - | - | Closed | Numbering probe; closed as not planned |
-| #31 | 4. Testing and Deployment | #59, #60, #61 | Open | Phases 2-5 applied: board live with 43 items; branch cleanup awaiting approval |
+| #31 | 4. Testing and Deployment | #59, #60, #61, #62 | Closed | Bootstrap complete: board live with 43 items and grouped views, branches consolidated to `develop` and `main` |
 | #32 | 1. Mobile App Implementation | - | Open | Add navigation shell and design system |
 | #33 | 1. Mobile App Implementation | - | Open | Handle camera and location permissions |
 | #34 | 1. Mobile App Implementation | - | Open | Integrate backend API client |
