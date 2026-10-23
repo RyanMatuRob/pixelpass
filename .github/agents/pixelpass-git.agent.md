@@ -50,13 +50,13 @@ Snapshot taken 2026-10-23. Refresh every run; live data always wins over this ta
 Verified environment and state:
 
 - Remote: `https://github.com/RyanMatuRob/pixelpass.git`; default branch `main`; integration branch `develop`; `core.autocrlf` is `true` (keep CRLF in the working tree).
-- Toolchain: `git` 2.51, `gh` 2.101 authenticated as `RyanMatuRob`, `node` v24. Token scopes are `gist`, `read:org`, `repo`, `workflow`; `project` and `read:project` are missing.
+- Toolchain: `git` 2.51, `gh` 2.101 authenticated as `RyanMatuRob`, `node` v24. Token scopes are `gist`, `project`, `read:org`, `repo`, `workflow`. `project` alone is enough for every board operation used here; `read:project` is not present and not required.
 - 43 issues exist: #1, #5-#8, #11, #13-#20, #30-#58. Numbers #2, #3, #4, #9, #10, #12 are pull requests, not issues. 28 are open (#31-#58) and every one carries exactly one canonical milestone and exactly one area label; the other 15 are closed. #30 was a user-created numbering probe titled `test`; it is closed as not planned and stays closed.
 - 8 milestones exist: the canonical four are active and populated - `1. Mobile App Implementation` (5 open, 10 closed), `2. Machine Learning Model` (7 open, 2 closed), `3. Backend Implementation` (6 open, 9 closed), `4. Testing and Deployment` (10 open, 2 closed). The four legacy milestones (`v0.1`, `ML Service Folder Addition`, `Mobile App Folder Addition`, `Core Application Features`) are closed at 0/0 and must not be reused. Milestone counts include merged pull requests.
 - 21 labels exist: GitHub's ten defaults (`accessibility`, `bug`, `documentation`, `duplicate`, `enhancement`, `good first issue`, `help wanted`, `invalid`, `question`, `wontfix`), which are kept, plus the eleven delivery labels `mobile`, `backend`, `ml`, `admin`, `testing`, `deployment`, `docs`, `tooling`, `security`, `blocked`, `tech-debt`.
-- Project board visibility is unknown because the token lacks the `project` scope. Do not assume a project exists; verify before creating.
+- Project board: `PixelPass Roadmap` is user project **#2** at `https://github.com/users/RyanMatuRob/projects/2` (id `PVT_kwHOCgn0zM4BoY1g`), linked to `RyanMatuRob/pixelpass`, holding all 43 issues as items (27 `Todo`, 1 `In Progress`, 15 `Done`) with views `All Items` (table), `Kanban` (board), and `By Milestone` (board). View grouping is unset because the API cannot write it, so the one-time `Group by` click is still pending. A pre-existing empty user project #1 (`@RyanMatuRob's untitled project`, 0 items, also linked) is not ours; leave it alone until the user decides.
 - `origin/main` is 1 commit ahead of `origin/develop` and 0 behind: PR #29 (`develop` -> `main`) is already merged. No release PR is pending. The local `main` ref is stale, so always `git fetch origin --prune` and compare `origin/main...origin/develop` before reasoning about release state.
-- 18 local branches and 17 remote branches exist (18 remote refs counting `origin/HEAD`). 15 PRs exist: #29 closes `develop` -> `main`; #3, #4, #9, #10 were closed without merge and are superseded; every other PR is merged. Verified branch facts: 12 local branches are ancestors of `develop`; `feature/qr-generator-ui` is a local-only duplicate of `feat/mobile-qr-generator-ui` that introduces no paths; the four `add-folder` branches (`feat/ml-service-folder-addition`, `feat/ml-service-folder-addition-issue7`, `feat/mobile-folder-addition`, `feat/mobile-folder-addition-issue8`) introduce only paths that already exist in `develop`. No branch holds unique content, so first-run cleanup is deletion-only, with no cherry-picks.
+- 18 local branches and 17 remote heads exist (18 remote-tracking refs counting `origin/HEAD`). 17 PRs exist: #29 closes `develop` -> `main`; #3, #4, #9, #10 were closed without merge and are superseded; #59 and #60 are the merged bootstrap PRs; every other PR is merged. Verified 2026-10-23 with `git rev-list --count origin/develop..origin/<branch>`: 11 concern branches are ancestors of `develop` (`chore/mobile-jdk17-toolchain`, `chore/repo-tooling`, `feat/admin-console`, `feat/backend-admin-apis`, `feat/backend-auth-login`, `feat/backend-structure`, `feat/mobile-add-folder`, `feat/mobile-qr-generator-ui`, `feat/mobile-scan-biometric`, `feat/mobile-signin`, `feat/scan-ml-mobile-untracked-assets`), and 4 (`feat/ml-service-folder-addition`, `feat/ml-service-folder-addition-issue7`, `feat/mobile-folder-addition`, `feat/mobile-folder-addition-issue8`) hold one obsolete commit each whose added paths all already exist in `develop` (2 and 17 paths respectively, 0 missing). Local `feature/qr-generator-ui` is a duplicate of `feat/mobile-qr-generator-ui` that introduces no paths. No branch holds unique content, so cleanup is deletion-only, with no cherry-picks. The 15 remote branches are still present: deletion awaits user approval.
 - A stray `mlservice/` Python virtual environment sits at the repository root untracked. `pixelpass-ml-service/venv` and `__pycache__` are not tracked; `pixelpass-ml-service/__pycache__/main.cpython-313.pyc` is tracked and should be removed by a tooling issue.
 
 ## Naming Decision Record
@@ -371,19 +371,28 @@ Create the label set with `--force` so the command is safe to repeat: `mobile`, 
 6. Merged pull requests also sit on the legacy milestones, so re-home them too with `gh pr edit <number> --milestone '<canonical title>'`. Close a legacy milestone only once it has 0 open and 0 closed items, with a comment naming the replacement. Re-homing applies to closed issues as well; that is what empties the legacy milestones. Never delete legacy milestones, and never force-close one that still lists items.
 
 ### Phase 5 - Project And Kanban
-1. With project scope available, list projects. Reuse `PixelPass Roadmap` if it exists; otherwise create it and link it to the repository.
-2. Add every issue (open and closed) as an item. Skip items already present. If an issue has no milestone, fix the issue first.
-3. Set `Status`: closed issues `Done`; open issues `Todo` unless active work exists.
-4. Create the `Kanban` and `By Milestone` views with `BOARD_LAYOUT` through GraphQL, then report the manual `Group by` step.
-5. Verify with `gh project item-list <number> --owner RyanMatuRob --format json` that the item count matches the issue count.
+Verified state 2026-10-23: project #2 `PixelPass Roadmap` exists, is linked, holds 43 items, and has three views. Reuse it; do not create a second board.
+
+1. With project scope available, list projects: `gh project list --owner RyanMatuRob --limit 100 --format json`. Reuse `PixelPass Roadmap` if it exists; otherwise create it and link it to the repository: `gh project create --owner RyanMatuRob --title 'PixelPass Roadmap' --format json` then `gh project link <number> --owner RyanMatuRob --repo RyanMatuRob/pixelpass`.
+2. Add every issue (open and closed) as an item with `gh project item-add <number> --owner RyanMatuRob --url <issue-url>`. Skip items already present. If an issue has no milestone, fix the issue first. Two cautions, both observed: adds are not concurrency-safe (parallel loops can return `Your attempt to move this item created a temporary conflict`), so add sequentially or re-check afterwards; and a status snapshot taken in the same batch as an add can miss the new item, so always re-list before concluding.
+3. Status is inherited from the issue state: closed issues arrive as `Done`, open ones as `Todo`. Set `In Progress` explicitly for the item actively being worked, for example:
+   `gh project item-edit --project-id PVT_kwHOCgn0zM4BoY1g --id <item-id> --field-id PVTSSF_lAHOCgn0zM4BoY1gzhm5LeU --single-select-option-id 47fc9ee4`
+   where the option ids are `Todo` `f75ad846`, `In Progress` `47fc9ee4`, `Done` `98236657`.
+4. Create the `Kanban` and `By Milestone` views, and rename the default `View 1` to `All Items`. `gh project view-create` does not exist in gh 2.101, so use GraphQL from a query file:
+   ```powershell
+   gh api graphql -F query=@"$env:TEMP\pp-view-kanban.graphql"
+   ```
+   with `mutation { createProjectV2View(input: { projectId: "<project-id>", name: "Kanban", layout: BOARD_LAYOUT }) { projectV2View { id number name layout } } }`, then the same for `By Milestone`, and `updateProjectV2View(input: { viewId: "<view-id>", name: "All Items" })` for the default. Inline `-f query='...'` is unreliable in PowerShell because the quotes are mangled; a `.graphql` file passed with `-F query=@<path>` works, and the file must be ASCII without a BOM.
+5. Report the manual `Group by` step. `ProjectV2ViewConfigurationInput` accepts only `visibleFieldIds`, and `groupByFields` is readable but not writable, so `Kanban` needs `Group by = Status` and `By Milestone` needs `Group by = Milestone` set by hand once in the UI.
+6. Verify with `gh project item-list <number> --owner RyanMatuRob --limit 200 --format json` that the item count matches the issue count, and record the real numbers in the ledger.
 
 ### Phase 6 - Branch Consolidation
 Goal: one integration branch plus zero stale branches, with all work reachable from `develop`.
 
 1. Inventory: local and remote branches, their tracking state, and the pull request that consumed each one.
 2. Classify each branch with these verifiable checks, in order:
-   - `git merge-base --is-ancestor <branch> develop` succeeds and its pull request is merged or closed: propose deletion. This covers 12 local branches today.
-   - Otherwise collect the paths the branch introduced: `git diff --name-only (git merge-base develop <branch>) <branch>`, then test each with `git cat-file -e "develop:<path>"`. If every path already exists in `develop`, the work landed through another merge and the branch has no unique content: propose deletion without cherry-picking. This covers the four `add-folder` branches and `feature/qr-generator-ui` today, which introduces no paths at all.
+   - `git merge-base --is-ancestor <branch> develop` succeeds and its pull request is merged or closed: propose deletion. This covers 11 branches today.
+   - Otherwise collect the paths the branch introduced: `git diff --name-only (git merge-base develop <branch>) <branch>`, then test each with `git cat-file -e "develop:<path>"`. If every path already exists in `develop`, the work landed through another merge and the branch has no unique content: propose deletion without cherry-picking. This covers the four `add-folder` branches and local `feature/qr-generator-ui` today, which introduces no paths at all.
    - If any introduced path is missing from `develop`, the branch holds unique content: adopt it. Create a concern branch from `develop`, cherry-pick the commits (preserving authorship), open a PR with the matching issue, merge with a merge commit, then propose deleting the old branch.
    - `git cherry develop <branch>` explains the classification: `+` means the patch is not applied upstream, `-` means it is. A busy `+` list together with zero missing paths means the content exists in an evolved form, so delete rather than cherry-pick into conflicts.
    - Duplicates: `git rev-list --left-right --count <a>...<b>` showing `0` on one side proves containment, so the contained branch is the duplicate to delete.
@@ -411,19 +420,19 @@ Update this table in place during Phase 7. Keep it truthful; `Pending` is a vali
 
 | Field | Value |
 | --- | --- |
-| Bootstrap state | `Phases 2-4 applied` 2026-10-23; `Phase 5 blocked` (token lacks `project`); `Phase 6 awaiting confirmation` |
-| Last bootstrap | 2026-10-23 (PR #59 merged into `develop`) |
+| Bootstrap state | `Phases 2-5 applied` 2026-10-23; `Phase 6 awaiting approval` (15 remote branches listed, none deleted) |
+| Last bootstrap | 2026-10-23 (PR #59 and PR #60 merged into `develop`) |
 | Repository snapshot verified | 2026-10-23 |
 | Naming rules | adopted as written; recorded exception - a remote branch may be deleted without extra confirmation when its pull request is merged and the branch is contained in `develop` |
 | Labels | applied - 11 delivery labels created with colours and descriptions, 21 total; GitHub's ten defaults kept |
 | Milestones | applied - canonical four created (#5-#8) with descriptions and populated; legacy four closed at 0/0 |
 | Issue re-homing | applied - 14 closed issues and merged PRs #2, #21-#28 moved to canonical milestones and labels; #30 closed as not planned |
-| Progress log | 43 issue rows seeded; PR column filled for merged PRs #2, #12, #21-#28 |
-| Bootstrap issue | #31 `Repo: bootstrap milestones, issues, and project board` (open, milestone 4, label `tooling`) |
-| Project board | blocked - `gh` scopes are `gist`, `read:org`, `repo`, `workflow`; run `gh auth refresh -s project,read:project` |
-| Kanban views | blocked with the board; `Group by` is manual because `groupByFields` is query-only |
-| Branch consolidation | not started; classification verified 2026-10-23 - 16 concern branches (12 ancestors of `develop`, 4 content-equivalent), 0 with unique content, so deletion-only |
-| Pending manual steps | grant project scope; create the board and add items; set view grouping; approve the 16 branch deletions |
+| Progress log | 43 issue rows seeded; PR column filled for merged PRs #2, #12, #21-#28, #59 |
+| Bootstrap issue | #31 `Repo: bootstrap milestones, issues, and project board` (open, milestone 4, label `tooling`, board status `In Progress`) |
+| Project board | applied - user project #2 `PixelPass Roadmap` created 2026-10-23, linked to `RyanMatuRob/pixelpass`, 43 items (27 `Todo`, 1 `In Progress`, 15 `Done`) |
+| Kanban views | applied - `All Items` (table), `Kanban` (board), `By Milestone` (board) created through GraphQL; `Group by` still needs the one manual click per board |
+| Branch consolidation | verified 2026-10-23 - 15 remote concern branches (11 ancestors of `develop`, 4 with one obsolete commit whose paths all exist in `develop`), 0 with unique content, so deletion-only; deletion waiting on user approval |
+| Pending manual steps | set `Group by` to `Status` on `Kanban` and `Milestone` on `By Milestone`; approve the 16 branch deletions (15 remote plus local `feature/qr-generator-ui`); decide what to do with the empty user project #1 |
 
 ## Running Summary And Progress Log
 This is the running summary for every issue and every pull request. It is append-only and lives in this file so that any run can state where delivery stands without re-reading the whole repository, and so the user can read one table instead of a report per run.
@@ -445,7 +454,7 @@ This is the running summary for every issue and every pull request. It is append
 | #19 | 1. Mobile App Implementation | #27 | Closed | Mobile scaffold and core screens |
 | #20 | 4. Testing and Deployment | #28 | Closed | CI, docs, and repository tooling |
 | #30 | - | - | Closed | Numbering probe; closed as not planned |
-| #31 | 4. Testing and Deployment | #59 | Open | Bootstrap Phases 2-4 applied; board and branch cleanup pending |
+| #31 | 4. Testing and Deployment | #59, #60, #61 | Open | Phases 2-5 applied: board live with 43 items; branch cleanup awaiting approval |
 | #32 | 1. Mobile App Implementation | - | Open | Add navigation shell and design system |
 | #33 | 1. Mobile App Implementation | - | Open | Handle camera and location permissions |
 | #34 | 1. Mobile App Implementation | - | Open | Integrate backend API client |
