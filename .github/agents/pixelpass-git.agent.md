@@ -424,11 +424,11 @@ Update this table in place during Phase 7. Keep it truthful; `Pending` is a vali
 | Bootstrap state | `Phases 2-6 applied` 2026-10-23; bootstrap complete pending the Phase 7 close-out of #31 |
 | Last bootstrap | 2026-10-23 (PR #59, PR #60, and PR #61 merged into `develop`) |
 | Repository snapshot verified | 2026-10-23 |
-| Naming rules | adopted as written; recorded exception - a remote branch may be deleted without extra confirmation when its pull request is merged and the branch is contained in `develop` |
+| Naming rules | adopted as written; recorded exception - a remote branch may be deleted without extra confirmation when its pull request is merged and the branch is contained in `develop`; the #44 invite surface keeps the existing `/api/visitors/*` mount instead of the issue's `/api/invites/*` sketch |
 | Labels | applied - 11 delivery labels created with colours and descriptions, 21 total; GitHub's ten defaults kept |
 | Milestones | applied - canonical four created (#5-#8) with descriptions and populated; legacy four closed at 0/0 |
 | Issue re-homing | applied - 14 closed issues and merged PRs #2, #21-#28 moved to canonical milestones and labels; #30 closed as not planned |
-| Progress log | 50 issue rows; PR column filled for merged PRs #2, #12, #21-#28, #59-#61, #64, #67, #69, #71, #73, #76, #79 (rows #66, #68, #70, #72, #75, #78 recorded 2026-10-25) |
+| Progress log | 55 issue rows; PR column filled for merged PRs #2, #12, #21-#28, #59-#61, #64, #67, #69, #71, #73, #76, #79, #82, #87-#90, #92 |
 | Bootstrap issue | #31 `Repo: bootstrap milestones, issues, and project board` (milestone 4, label `tooling`, board status `In Progress` until the Phase 7 close-out) |
 | Project board | applied - user project #2 `PixelPass Roadmap` created 2026-10-23, linked to `RyanMatuRob/pixelpass`, 43 items (27 `Todo`, 1 `In Progress`, 15 `Done`); the empty user project #1 was deleted the same day |
 | Kanban views | applied - `All Items` (table), `Kanban` (board, grouped by `Status`), `By Milestone` (board, grouped by `Milestone`) created through GraphQL, with the grouping set by hand and the board layout re-applied |
@@ -468,7 +468,7 @@ This is the running summary for every issue and every pull request. It is append
 | #41 | 2. Machine Learning Model | - | Open | Implement verification endpoint contract |
 | #42 | 2. Machine Learning Model | - | Open | Add model evaluation harness |
 | #43 | 2. Machine Learning Model | - | Open | Containerize service and document runtime |
-| #44 | 3. Backend Implementation | - | Open | Implement visitor invite APIs |
+| #44 | 3. Backend Implementation | #92 | Merged 2026-10-25 | Visitor invites: host links, selfie acceptance, gateway-signed pass, revocation, gate enforcement |
 | #45 | 3. Backend Implementation | - | Open | Implement user directory APIs |
 | #46 | 3. Backend Implementation | - | Open | Implement audit and access log APIs |
 | #47 | 3. Backend Implementation | - | Open | Validate requests and harden errors |
