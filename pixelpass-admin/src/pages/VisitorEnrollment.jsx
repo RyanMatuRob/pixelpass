@@ -42,7 +42,7 @@ export default function VisitorEnrollment() {
       } else {
         setError(data.error || "Enrollment failed. Please contact the administrator.");
       }
-    } catch (err) {
+    } catch {
       setError("Network error. Please check your connection.");
     } finally {
       setIsSubmitting(false);
