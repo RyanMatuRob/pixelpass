@@ -6,6 +6,7 @@ import Scans from './pages/Scans';
 import UserDirectory from './pages/UserDirectory';
 import VisitorEngine from './pages/VisitorEngine';
 import VisitorEnrollment from './pages/VisitorEnrollment';
+import VisitorCapture from './pages/VisitorCapture';
 import AuditLog from './pages/AuditLog';
 import Login from './pages/Login';
 
@@ -15,6 +16,8 @@ function App() {
             <Routes>
                 {/* Public: no admin shell, no session required */}
                 <Route path="/login" element={<Login />} />
+                <Route path="/invite" element={<VisitorCapture />} />
+                <Route path="/invite/:token" element={<VisitorCapture />} />
                 <Route path="/enroll/:token" element={<VisitorEnrollment />} />
                 <Route path="/enroll" element={<VisitorEnrollment />} />
 
