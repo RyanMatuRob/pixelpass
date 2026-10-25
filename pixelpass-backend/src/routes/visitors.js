@@ -30,10 +30,10 @@ const BASE64_BODY = /^[A-Za-z0-9+/]+={0,2}$/;
 // Fields the console and the mobile invite tab both need, without the biometrics.
 const HOST_SELECT = 'firstName lastName roleCategory department';
 
-// The deep link the host shares. The bundled SPA reads the token from `?token=`, and
-// deployments point INVITE_BASE_URL at the public visitor portal.
+// The deep link the host shares. The bundled SPA reads the token from `?token=`; the portal
+// route captures a selfie, while `/enroll` stays reachable for links minted before it existed.
 const inviteBaseUrl = () =>
-    (process.env.INVITE_BASE_URL || 'http://localhost:5173/enroll').replace(/\/+$/, '');
+    (process.env.INVITE_BASE_URL || 'http://localhost:5173/invite').replace(/\/+$/, '');
 
 const buildInviteLink = (token) => `${inviteBaseUrl()}?token=${encodeURIComponent(token)}`;
 
@@ -415,7 +415,12 @@ const acceptInvitation = async (req, res, rawToken) => {
         }
 
         const body = req.body || {};
-        const face = normalizeFace(body.faceEmbedding !== undefined ? body.faceEmbedding : body.referenceFaceBase64);
+        // The visitor portal sends a client-side digest *and* the captured JPEG. The digest is
+        // the browser's stand-in for an embedding, but `/api/scan` hands `referenceFaceBase64`
+        // to the ML service, so a decodable image wins whenever both arrive.
+        const face = normalizeFace(
+            body.referenceFaceBase64 !== undefined ? body.referenceFaceBase64 : body.faceEmbedding
+        );
         if (face.error) {
             return res.status(400).json({ error: face.error });
         }
