@@ -496,6 +496,7 @@ This is the running summary for every issue and every pull request. It is append
 | #85 | 3. Backend Implementation | #89 | Merged 2026-10-25 | User directory grid with department filter and revocation |
 | #86 | 3. Backend Implementation | #90 | Merged 2026-10-25 | Scan telemetry persists decisions, explains anomalies, and drives console metrics |
 | #94 | 3. Backend Implementation | #95 | Merged 2026-10-25 | Visitor capture portal: invite lookup, browser selfie with SHA-256 bridge, QR pass with `exp` countdown, LAN/HTTPS dev setup |
+| #97 | 1. Mobile App Implementation | #98 | Merged 2026-10-25 | `@JvmOverloads` restores the `(Application)` constructor the session gate needs at launch, guarded by a reflection test |
 
 
 
