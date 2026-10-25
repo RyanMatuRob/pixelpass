@@ -15,10 +15,9 @@ const val SYNC_BATCH_SIZE: Int = 25
 private const val DECISION_GRANTED = "GRANTED"
 private const val DECISION_PENDING = "DENIED"
 
-private const val HEADLINE_GRANTED = "ACCESS GRANTED"
-private const val HEADLINE_DENIED = "ACCESS DENIED"
-private const val HEADLINE_OFFLINE_GRANTED = "OFFLINE APPROVAL"
-private const val HEADLINE_OFFLINE_PENDING = "OFFLINE - GATEWAY UNREACHABLE"
+private val HEADLINE_GRANTED = ScanVerdict.GRANTED.headline
+private val HEADLINE_DENIED = ScanVerdict.DENIED.headline
+private val HEADLINE_OFFLINE_GRANTED = ScanVerdict.OFFLINE_APPROVAL.headline
 
 /**
  * Bridges the scanner, the gateway and the offline queue.
@@ -83,7 +82,7 @@ class ScanRepository(
         } else {
             ScanOutcome(
                 granted = false,
-                headline = HEADLINE_OFFLINE_PENDING,
+                headline = HEADLINE_DENIED,
                 detail = "Without the gateway an unsigned token cannot be approved. The scan is queued for review.",
                 queuedForSync = true
             )

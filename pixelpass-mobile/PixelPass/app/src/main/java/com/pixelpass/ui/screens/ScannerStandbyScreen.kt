@@ -20,19 +20,23 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
+import com.pixelpass.qr.PassVerdict
 import com.pixelpass.scan.ScanGate
 import com.pixelpass.scan.ScanIntake
 import com.pixelpass.ui.components.CameraPreview
 import com.pixelpass.ui.theme.*
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 fun ScannerStandbyScreen(
     onQrScanned: (ScanIntake.Accepted) -> Unit,
     onBackClick: () -> Unit = {},
-    intake: (String) -> ScanIntake = { ScanGate.intake(it) }
+    onReplayDetected: (String) -> Unit = {},
+    intake: suspend (String) -> ScanIntake = { ScanGate.intake(it) }
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val permissionsState = rememberMultiplePermissionsState(
         permissions = listOf(
             Manifest.permission.CAMERA,
@@ -143,13 +147,22 @@ fun ScannerStandbyScreen(
                     isTorchOn = isTorchOn,
                     onQrScanned = { raw ->
                         // Local checks run first: nothing reaches face capture or the
-                        // gateway unless the pass itself is acceptable.
-                        when (val result = intake(raw)) {
-                            is ScanIntake.Accepted -> {
-                                rejection = null
-                                onQrScanned(result)
+                        // gateway unless the pass itself is acceptable. A replayed
+                        // pass leaves the viewfinder and gets its own full screen.
+                        scope.launch {
+                            when (val result = intake(raw)) {
+                                is ScanIntake.Accepted -> {
+                                    rejection = null
+                                    onQrScanned(result)
+                                }
+
+                                is ScanIntake.Rejected -> if (result.verdict == PassVerdict.REPLAY) {
+                                    rejection = null
+                                    onReplayDetected(result.reason)
+                                } else {
+                                    rejection = result.reason
+                                }
                             }
-                            is ScanIntake.Rejected -> rejection = result.reason
                         }
                     }
                 )

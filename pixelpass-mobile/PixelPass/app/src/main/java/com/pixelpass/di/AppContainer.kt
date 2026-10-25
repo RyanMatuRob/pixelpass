@@ -4,6 +4,8 @@ import android.content.Context
 import com.pixelpass.core.PixelPassLog
 import com.pixelpass.data.local.PixelPassDatabase
 import com.pixelpass.data.session.SessionStore
+import com.pixelpass.scan.ScanIntakeCoordinator
+import com.pixelpass.scan.ScanReplayGuard
 import com.pixelpass.scan.ScanRepository
 import com.pixelpass.scan.ScanSyncScheduler
 import com.pixelpass.security.DeviceKeyStore
@@ -37,6 +39,16 @@ class AppContainer(context: Context) {
             pendingSyncScanDao = database.pendingSyncScanDao(),
             onQueued = { ScanSyncScheduler.enqueue(appContext) }
         )
+    }
+
+    /** Remembers accepted nonces so a rotated pass cannot be presented twice here. */
+    val scanReplayGuard: ScanReplayGuard by lazy {
+        ScanReplayGuard(dao = database.scannedNonceDao())
+    }
+
+    /** The single entry point the scanner uses: verify locally, then claim the nonce. */
+    val scanIntake: ScanIntakeCoordinator by lazy {
+        ScanIntakeCoordinator(replayGuard = scanReplayGuard)
     }
 
     private val locationGeohashProvider: LocationGeohashProvider by lazy {

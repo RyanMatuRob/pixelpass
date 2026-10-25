@@ -13,7 +13,9 @@ enum class PassVerdict {
     /** The payload's user does not match the owner of the embedded token. */
     IDENTITY_MISMATCH,
     /** Rotation window, clock skew or the token's own `exp` was exceeded. */
-    EXPIRED
+    EXPIRED,
+    /** The nonce of this pass was already accepted on this guard's device. */
+    REPLAY
 }
 
 data class PassCheck(
