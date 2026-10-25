@@ -27,8 +27,13 @@ sealed interface SessionState {
  *
  * Startup is deliberately strict: a stored token is only reused while its local
  * TTL holds; otherwise the secure storage is wiped before the UI is shown.
+ *
+ * `@JvmOverloads` is required, not cosmetic: the injectable `clock` default stops
+ * Kotlin from emitting a `SessionViewModel(Application)` constructor, which is the
+ * exact signature `AndroidViewModelFactory` looks up by reflection. Without it the
+ * session gate dies on launch with `NoSuchMethodException`.
  */
-class SessionViewModel(
+class SessionViewModel @JvmOverloads constructor(
     application: Application,
     private val clock: () -> Long = System::currentTimeMillis
 ) : AndroidViewModel(application) {
