@@ -1,18 +1,21 @@
-package com.pixelpass // We will fix this below
+package com.pixelpass
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import com.pixelpass.ui.navigation.PixelPassNavigation
+import com.pixelpass.ui.session.PixelPassRoot
+import com.pixelpass.ui.theme.PixelPassTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // setContent defines the activity's layout where composable functions are called.
+        // Every launch starts at the session gate: restore the stored session,
+        // then either render the pass/scanner or fall back to sign-in.
         setContent {
-            // Note: If you created a custom Theme class in ui/theme, wrap this screen inside it.
-            PixelPassNavigation()
+            PixelPassTheme {
+                PixelPassRoot()
+            }
         }
     }
 }

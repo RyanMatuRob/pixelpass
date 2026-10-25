@@ -36,7 +36,7 @@ private val TextDark = Color(0xFF1A1F36)
 private val TextGray = Color(0xFF6B7280)
 
 @Composable
-fun SignInScreen(onLoginSuccess: (String, String) -> Unit) {
+fun SignInScreen(onLoginSuccess: (token: String, role: String, keepSignedIn: Boolean) -> Unit) {
     var identifier by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
 
@@ -244,7 +244,7 @@ fun SignInScreen(onLoginSuccess: (String, String) -> Unit) {
                                         val token = response.body()?.token
 
                                         if (token != null && role != null) {
-                                            onLoginSuccess(token, role)
+                                            onLoginSuccess(token, role, keepSignedIn)
                                         }
                                     } else {
                                         Toast.makeText(context, "Invalid credentials", Toast.LENGTH_SHORT).show()

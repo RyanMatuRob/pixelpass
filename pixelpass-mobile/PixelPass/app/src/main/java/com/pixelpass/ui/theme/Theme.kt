@@ -1,6 +1,9 @@
 package com.pixelpass.ui.theme
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -27,3 +30,24 @@ val AppTypography = Typography(
         color = NeutralDark
     ) //[cite: 1]
 )
+
+private val PixelPassColors = lightColorScheme(
+    primary = PrimaryBlue,
+    secondary = SecondaryOrange,
+    tertiary = TertiaryBlue,
+    background = SurfaceLight,
+    surface = SurfaceWhite,
+    onPrimary = SurfaceWhite,
+    onBackground = NeutralDark,
+    onSurface = NeutralDark
+)
+
+/** Design-system entry point; every screen is drawn inside this theme. */
+@Composable
+fun PixelPassTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = PixelPassColors,
+        typography = AppTypography,
+        content = content
+    )
+}

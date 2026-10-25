@@ -5,73 +5,48 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.pixelpass.ui.screens.SignInScreen
+import com.pixelpass.data.session.UserSession
+import com.pixelpass.ui.screens.BiometricVerificationScreen
 import com.pixelpass.ui.screens.QrGeneratorScreen
 import com.pixelpass.ui.screens.ScannerStandbyScreen
-import com.pixelpass.ui.screens.BiometricVerificationScreen
 
+private const val ROUTE_QR_GENERATOR = "qrGenerator"
+private const val ROUTE_SCANNER = "scanner_standby"
+private const val ROUTE_BIOMETRIC = "biometric_verification/{jwt}"
+
+/**
+ * Signed-in navigation. The start destination comes from the signed-in role, so
+ * a guard lands on the scanner and everyone else lands on their pass.
+ */
 @Composable
-fun PixelPassNavigation() {
+fun PixelPassNavigation(session: UserSession, onSignOut: () -> Unit) {
     val navController = rememberNavController()
+    val startDestination = if (session.isGuard) ROUTE_SCANNER else ROUTE_QR_GENERATOR
 
-    NavHost(navController = navController, startDestination = "signin") {
-        composable("signin") {
-            SignInScreen(
-                onLoginSuccess = { token, role ->
-                    // Route SECURITY personnel to the camera, everyone else to their QR code
-                    val destination = if (role == "SECURITY") {
-                        "scanner_standby"
-                    } else {
-                        "qrGenerator/${Uri.encode(token)}"
-                    }
-
-                    navController.navigate(destination) {
-                        popUpTo("signin") { inclusive = true }
-                    }
-                }
-            )
-        }
-
-        composable("qrGenerator/{token}") { backStackEntry ->
-            val rawToken = backStackEntry.arguments?.getString("token") ?: ""
-            val token = Uri.decode(rawToken)
+    NavHost(navController = navController, startDestination = startDestination) {
+        composable(ROUTE_QR_GENERATOR) {
             QrGeneratorScreen(
-                token = token,
-                onBackClick = {
-                    navController.navigate("signin") {
-                        popUpTo(0) { inclusive = true }
-                    }
-                },
-                onProfileClick = {
-                    navController.navigate("signin") {
-                        popUpTo(0) { inclusive = true }
-                    }
-                }
+                token = session.token,
+                onBackClick = onSignOut,
+                onProfileClick = onSignOut
             )
         }
 
-        composable("scanner_standby") {
+        composable(ROUTE_SCANNER) {
             ScannerStandbyScreen(
                 onQrScanned = { jwt ->
-                    // Route to the biometric verification screen and pass the token
                     navController.navigate("biometric_verification/${Uri.encode(jwt)}")
                 },
-                onBackClick = {
-                    navController.navigate("signin") {
-                        popUpTo(0) { inclusive = true }
-                    }
-                }
+                onBackClick = onSignOut
             )
         }
 
-        composable("biometric_verification/{jwt}") { backStackEntry ->
-            val rawJwt = backStackEntry.arguments?.getString("jwt") ?: ""
-            val jwt = Uri.decode(rawJwt)
+        composable(ROUTE_BIOMETRIC) { backStackEntry ->
+            val jwt = Uri.decode(backStackEntry.arguments?.getString("jwt") ?: "")
             BiometricVerificationScreen(
                 jwt = jwt,
                 onVerificationComplete = {
-                    // Route back to scanner after the visitor is processed
-                    navController.popBackStack("scanner_standby", inclusive = false)
+                    navController.popBackStack(ROUTE_SCANNER, inclusive = false)
                 }
             )
         }

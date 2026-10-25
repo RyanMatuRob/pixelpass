@@ -3,6 +3,8 @@ package com.pixelpass.di
 import android.content.Context
 import com.pixelpass.core.PixelPassLog
 import com.pixelpass.data.local.PixelPassDatabase
+import com.pixelpass.data.session.SessionStore
+import com.pixelpass.security.DeviceKeyStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -18,6 +20,19 @@ class AppContainer(context: Context) {
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     val database: PixelPassDatabase by lazy { PixelPassDatabase.build(appContext) }
+
+    val sessionStore: SessionStore by lazy { SessionStore(appContext) }
+
+    val deviceKeyStore: DeviceKeyStore by lazy { DeviceKeyStore() }
+
+    /** The Keystore key pair is created once, off the main thread, before the first pass. */
+    fun prepareDeviceIdentity() {
+        appScope.launch {
+            runCatching { deviceKeyStore.getOrCreateKeyPair() }
+                .onSuccess { PixelPassLog.i(PixelPassLog.QR, "Device signing key ready") }
+                .onFailure { PixelPassLog.e(PixelPassLog.QR, "Device signing key unavailable", it) }
+        }
+    }
 
     /**
      * Opens the database off the main thread on launch so Database Inspector can

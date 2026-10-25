@@ -14,6 +14,7 @@ class PixelPassApp : Application() {
         super.onCreate()
         container = AppContainer(this)
         container.warmUp()
+        container.prepareDeviceIdentity()
         PixelPassLog.i(PixelPassLog.DB, "Application started; local database is ${PixelPassDatabase.NAME}")
     }
 }
