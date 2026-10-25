@@ -1,26 +1,29 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 export default function AuditLog() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchLogs();
-  }, []);
-
-  const fetchLogs = async () => {
+  const fetchLogs = useCallback(async () => {
     try {
       const response = await fetch('http://localhost:3000/api/logs');
       if (response.ok) {
         const data = await response.json();
         setLogs(data);
       }
-    } catch (error) {
+    } catch {
       console.error("Failed to fetch logs");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    // One-shot load on mount; the fetch resolves after the render pass, so this is not
+    // the derived-state pattern the rule is guarding against.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchLogs();
+  }, [fetchLogs]);
 
   if (loading) return <div className="p-8">Loading security audit trail...</div>;
 

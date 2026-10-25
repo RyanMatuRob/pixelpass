@@ -32,7 +32,7 @@ export default function VisitorEngine() {
       } else {
         alert('Failed to generate invite');
       }
-    } catch (error) {
+    } catch {
       alert('Network error');
     } finally {
       setIsGenerating(false);

@@ -32,7 +32,7 @@ export default function Login() {
       } else {
         setError(data.error || "Login failed");
       }
-    } catch (err) {
+    } catch {
       setError("Network error. Check connection.");
     } finally {
       setIsLoading(false);

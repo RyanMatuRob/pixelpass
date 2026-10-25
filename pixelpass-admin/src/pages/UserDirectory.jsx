@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 export default function UserDirectory() {
   const [users, setUsers] = useState([]);
@@ -10,23 +10,26 @@ export default function UserDirectory() {
   const [previewImage, setPreviewImage] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       const response = await fetch('http://localhost:3000/api/users'); 
       if (response.ok) {
         const data = await response.json();
         setUsers(data);
       }
-    } catch (error) {
+    } catch {
       console.error("Failed to fetch users");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    // One-shot load on mount; the fetch resolves after the render pass, so this is not
+    // the derived-state pattern the rule is guarding against.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchUsers();
+  }, [fetchUsers]);
 
   // --- Photo Upload Logic ---
   
@@ -65,7 +68,7 @@ export default function UserDirectory() {
       } else {
         alert("Upload failed. Check server logs.");
       }
-    } catch (error) {
+    } catch {
       alert("Network error.");
     } finally {
       setIsUploading(false);
