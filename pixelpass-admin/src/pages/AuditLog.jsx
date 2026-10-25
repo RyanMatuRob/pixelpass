@@ -1,6 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../api/client';
 
+const DECISION_STYLES = {
+  GRANTED: 'bg-green-100 text-green-800',
+  DENIED: 'bg-red-100 text-red-800',
+  PROVISIONAL: 'bg-amber-100 text-amber-800'
+};
+
+// Rows recorded before the telemetry phase carry no decision; derive it the way the
+// gate always behaved so the trail never shows a blank verdict.
+const decisionOf = (log) => {
+  if (log.accessDecision) return log.accessDecision;
+  if (!log.biometricOutcome) return 'DENIED';
+  return log.isAnomaly ? 'PROVISIONAL' : 'GRANTED';
+};
+
 export default function AuditLog() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -52,9 +66,9 @@ export default function AuditLog() {
               </tr>
             ) : (
               logs.map((log) => {
-                // Determine overall access status for styling
-                const isAccessGranted = log.biometricOutcome && !log.isAnomaly;
-                
+                // Stored decision, or the legacy derivation for older rows.
+                const decision = decisionOf(log);
+
                 return (
                   <tr key={log._id} className="hover:bg-gray-50 transition-colors">
                     {/* Timestamp */}
@@ -88,6 +102,9 @@ export default function AuditLog() {
                           <span className="text-amber-600 font-bold flex items-center gap-1">
                             ⚠ Anomaly Detected
                           </span>
+                          <span className="text-xs text-gray-600">
+                            {log.anomalyReason || (log.isAnomaly ? 'Reason not recorded' : 'No deviation')}
+                          </span>
                           <span className="text-xs text-gray-500">Score: {log.anomalyScore?.toFixed(2)}</span>
                         </div>
                       ) : (
@@ -103,11 +120,9 @@ export default function AuditLog() {
                     {/* Overall Decision */}
                     <td className="p-4 text-right">
                       <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                        isAccessGranted 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
+                        DECISION_STYLES[decision] || DECISION_STYLES.DENIED
                       }`}>
-                        {isAccessGranted ? 'GRANTED' : 'DENIED'}
+                        {decision}
                       </span>
                     </td>
                   </tr>
