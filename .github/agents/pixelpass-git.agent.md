@@ -490,6 +490,11 @@ This is the running summary for every issue and every pull request. It is append
 | #72 | 1. Mobile App Implementation | #73 | Merged 2026-10-25 | Local scan gate, offline queue, and deferred replay |
 | #75 | 1. Mobile App Implementation | #76 | Merged 2026-10-25 | Nonce replay cache plus four full-screen scan verdicts |
 | #78 | 3. Backend Implementation | #79 | Merged 2026-10-25 | Faker volume seed of 173 users across five roles |
+| #81 | 3. Backend Implementation | #82 | Merged 2026-10-25 | User schema gains names, department, activation flag, and reference face |
+| #83 | 3. Backend Implementation | #88 | Merged 2026-10-25 | Admin bearer-token guard plus session-aware console API client |
+| #84 | 3. Backend Implementation | #87 | Merged 2026-10-25 | React admin SPA scaffolded with routing shell and login |
+| #85 | 3. Backend Implementation | #89 | Merged 2026-10-25 | User directory grid with department filter and revocation |
+
 
 Rules:
 - Add the issue row in the same step that creates or re-homes the issue. Keep the outcome to one line and describe delivery, not activity.

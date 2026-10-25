@@ -2,7 +2,9 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const AccessLog = require('../models/AccessLog');
 const User = require('../models/User'); // Import the User model
+const { describeAnomaly, decideAccess } = require('../utils/telemetry');
 const router = express.Router();
+
 const mongoose = require('mongoose');
 const ML_SERVICE_URL = 'http://127.0.0.1:8000/predict';
 
@@ -76,7 +78,21 @@ router.post('/', async (req, res) => {
         if (!mlResponse.ok) throw new Error('ML Microservice unreachable');
         const mlData = await mlResponse.json(); 
 
-        // 6. Save the transaction to MongoDB
+        // 6. Explain the model's verdict and record the operator-facing decision
+        const accessDecision = decideAccess({
+            biometricMatch: mlData.biometric_match,
+            isAnomaly: mlData.is_anomaly
+        });
+        const anomalyReason = describeAnomaly({
+            isAnomaly: mlData.is_anomaly,
+            previousLog: lastScan,
+            terminalCoordinate,
+            scanIntervalSeconds,
+            scanFrequencyOneHour: scan_frequency_1h,
+            hourOfDay: hour_of_day
+        });
+
+        // 7. Save the transaction to MongoDB
         const log = new AccessLog({
             userId,
             roleCategory,
@@ -86,15 +102,21 @@ router.post('/', async (req, res) => {
             biometricOutcome: mlData.biometric_match,
             scanIntervalSeconds,
             isAnomaly: mlData.is_anomaly,
-            anomalyScore: mlData.anomaly_score
+            anomalyScore: mlData.anomaly_score,
+            anomalyReason,
+            accessDecision
         });
         await log.save();
 
-        // 7. Return the final decision to the Security Guard's device
+        // 8. Return the final decision to the Security Guard's device. `access` keeps the
+        // GRANTED/DENIED wording the mobile app already understands; `decision` adds the
+        // provisional label and `anomalyReason` explains any ML flag to the console.
         if (!mlData.biometric_match) {
             return res.status(403).json({
                 access: 'DENIED',
+                decision: accessDecision,
                 reason: 'Facial Recognition Failed (Identity Mismatch)',
+                anomalyReason,
                 score: mlData.anomaly_score
             });
         }
@@ -102,8 +124,10 @@ router.post('/', async (req, res) => {
         // If biometric match succeeds, grant entry (attaching anomaly flag for telemetry/logging)
         return res.status(200).json({
             access: 'GRANTED',
+            decision: accessDecision,
             message: 'Clear for entry',
             isAnomaly: mlData.is_anomaly,
+            anomalyReason,
             score: mlData.anomaly_score
         });
 

@@ -8,7 +8,9 @@ const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const app = express();
 const logRoutes = require('./routes/logs');
+const metricsRoutes = require('./routes/metrics');
 const visitorRoutes = require('./routes/visitors');
+
 const { requireAdmin } = require('./middlewares/auth');
 
 app.use(cors());
@@ -26,6 +28,8 @@ app.use('/api/users', requireAdmin, userRoutes);
 app.use('/api/logs', requireAdmin, logRoutes);
 app.use('/api/admin/users', requireAdmin, userRoutes);
 app.use('/api/admin/logs', requireAdmin, logRoutes);
+app.use('/api/admin/metrics', requireAdmin, metricsRoutes);
+
 
 app.get('/health', (request, response) => {
     response.json({ status: 'ok' });

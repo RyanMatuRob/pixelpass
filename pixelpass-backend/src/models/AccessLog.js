@@ -15,6 +15,21 @@ const AccessLogSchema = new mongoose.Schema({
     scanIntervalSeconds: { type: Number },
     isAnomaly: { type: Boolean, required: true }, // ML prediction verdict
     anomalyScore: { type: Number, default: 0 }, // Populated by the ML microservice
+    // Human-readable explanation built by src/utils/telemetry.js for flagged scans.
+    anomalyReason: { type: String, default: null },
+    // Operator-facing verdict: DENIED is a biometric mismatch, PROVISIONAL is a match
+    // the model flagged, GRANTED is a clean pass. Older rows have no value stored.
+    accessDecision: {
+        type: String,
+        enum: ['GRANTED', 'DENIED', 'PROVISIONAL'],
+        default: 'GRANTED',
+        index: true
+    },
 }, { timestamps: true });
+
+// The telemetry feed reads newest-first, and the anomaly panel reads flagged rows the same way.
+AccessLogSchema.index({ timestamp: -1 });
+AccessLogSchema.index({ isAnomaly: 1, timestamp: -1 });
+
 
 module.exports = mongoose.model('AccessLog', AccessLogSchema);
