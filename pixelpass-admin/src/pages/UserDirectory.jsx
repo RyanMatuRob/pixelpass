@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import api from '../api/client';
 
 export default function UserDirectory() {
   const [users, setUsers] = useState([]);
@@ -12,11 +13,8 @@ export default function UserDirectory() {
 
   const fetchUsers = useCallback(async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/users'); 
-      if (response.ok) {
-        const data = await response.json();
-        setUsers(data);
-      }
+      const { data } = await api.get('/api/users');
+      setUsers(data);
     } catch {
       console.error("Failed to fetch users");
     } finally {
@@ -56,20 +54,11 @@ export default function UserDirectory() {
     setIsUploading(true);
     
     try {
-      const response = await fetch(`http://localhost:3000/api/users/${selectedUserId}/biometric`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ referenceFaceBase64: previewImage })
-      });
-      
-      if (response.ok) {
-        fetchUsers(); // Refresh the table to show "Enrolled"
-        setIsModalOpen(false);
-      } else {
-        alert("Upload failed. Check server logs.");
-      }
+      await api.put(`/api/users/${selectedUserId}/biometric`, { referenceFaceBase64: previewImage });
+      fetchUsers(); // Refresh the table to show "Enrolled"
+      setIsModalOpen(false);
     } catch {
-      alert("Network error.");
+      alert("Upload failed. Check server logs.");
     } finally {
       setIsUploading(false);
     }

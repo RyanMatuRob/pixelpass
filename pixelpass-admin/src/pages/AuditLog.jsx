@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import api from '../api/client';
 
 export default function AuditLog() {
   const [logs, setLogs] = useState([]);
@@ -6,11 +7,8 @@ export default function AuditLog() {
 
   const fetchLogs = useCallback(async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/logs');
-      if (response.ok) {
-        const data = await response.json();
-        setLogs(data);
-      }
+      const { data } = await api.get('/api/logs');
+      setLogs(data);
     } catch {
       console.error("Failed to fetch logs");
     } finally {
