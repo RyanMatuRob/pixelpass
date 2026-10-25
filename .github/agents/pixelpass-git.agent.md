@@ -494,6 +494,8 @@ This is the running summary for every issue and every pull request. It is append
 | #83 | 3. Backend Implementation | #88 | Merged 2026-10-25 | Admin bearer-token guard plus session-aware console API client |
 | #84 | 3. Backend Implementation | #87 | Merged 2026-10-25 | React admin SPA scaffolded with routing shell and login |
 | #85 | 3. Backend Implementation | #89 | Merged 2026-10-25 | User directory grid with department filter and revocation |
+| #86 | 3. Backend Implementation | #90 | Merged 2026-10-25 | Scan telemetry persists decisions, explains anomalies, and drives console metrics |
+
 
 
 Rules:
