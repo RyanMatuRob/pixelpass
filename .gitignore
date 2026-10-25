@@ -1,3 +1,4 @@
 node_modules/
 .env
 pixelpass-backend/src/config/keys/jwtRS256.key
+/mlservice/
