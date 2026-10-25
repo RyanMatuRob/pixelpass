@@ -16,7 +16,16 @@ const UserSchema = new mongoose.Schema({
     facialEmbedding: { type: [Number], default: [] }, // Biometric placeholder[cite: 6]
     registeredTerminals: [{ type: String }],
     isActive: { type: Boolean, default: true },
-    referenceFaceBase64: { type: String, required: false }
+    referenceFaceBase64: { type: String, required: false },
+    // Visitor lifecycle: an accepted invitation creates an ephemeral VISITOR account that
+    // only exists for the invitation's window. The scan gateway refuses it outside
+    // [accessValidFrom, accessValidUntil] and as soon as the host or an admin revokes it.
+    invitationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Invitation', default: null },
+    accessValidFrom: { type: Date, default: null },
+    accessValidUntil: { type: Date, default: null }
 }, { timestamps: true });
+
+// Revocation and expiry sweeps look ephemeral accounts up by invite.
+UserSchema.index({ invitationId: 1 }, { sparse: true });
 
 module.exports = mongoose.model('User', UserSchema);
