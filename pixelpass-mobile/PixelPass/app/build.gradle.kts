@@ -68,6 +68,11 @@ android {
         compose = true
         buildConfig = true // Enable BuildConfig generation
     }
+    testOptions {
+        // Pure JVM tests use the real classes; android.util.Log is stubbed out
+        // instead of throwing so logging never fails a unit test.
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 
@@ -84,6 +89,7 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(platform(libs.androidx.compose.bom))

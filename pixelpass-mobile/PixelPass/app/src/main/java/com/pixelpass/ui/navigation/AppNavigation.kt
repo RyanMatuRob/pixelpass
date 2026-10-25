@@ -2,17 +2,21 @@ package com.pixelpass.ui.navigation
 
 import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.pixelpass.data.session.UserSession
+import com.pixelpass.scan.ScanIntake
+import com.pixelpass.scan.ScanSource
 import com.pixelpass.ui.screens.BiometricVerificationScreen
 import com.pixelpass.ui.screens.QrGeneratorScreen
 import com.pixelpass.ui.screens.ScannerStandbyScreen
 
 private const val ROUTE_QR_GENERATOR = "qrGenerator"
 private const val ROUTE_SCANNER = "scanner_standby"
-private const val ROUTE_BIOMETRIC = "biometric_verification/{jwt}"
+private const val ROUTE_BIOMETRIC = "biometric_verification/{jwt}?nonce={nonce}&signed={signed}"
 
 /**
  * Signed-in navigation. The start destination comes from the signed-in role, so
@@ -34,21 +38,42 @@ fun PixelPassNavigation(session: UserSession, onSignOut: () -> Unit) {
 
         composable(ROUTE_SCANNER) {
             ScannerStandbyScreen(
-                onQrScanned = { jwt ->
-                    navController.navigate("biometric_verification/${Uri.encode(jwt)}")
-                },
+                onQrScanned = { accepted -> navController.navigate(accepted.toRoute()) },
                 onBackClick = onSignOut
             )
         }
 
-        composable(ROUTE_BIOMETRIC) { backStackEntry ->
-            val jwt = Uri.decode(backStackEntry.arguments?.getString("jwt") ?: "")
+        composable(
+            route = ROUTE_BIOMETRIC,
+            arguments = listOf(
+                navArgument("jwt") { type = NavType.StringType },
+                navArgument("nonce") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument("signed") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                }
+            )
+        ) { backStackEntry ->
+            val jwt = Uri.decode(backStackEntry.arguments?.getString("jwt").orEmpty())
+            val nonce = Uri.decode(backStackEntry.arguments?.getString("nonce").orEmpty())
             BiometricVerificationScreen(
                 jwt = jwt,
+                nonce = nonce.ifBlank { null },
+                signed = backStackEntry.arguments?.getBoolean("signed") == true,
                 onVerificationComplete = {
                     navController.popBackStack(ROUTE_SCANNER, inclusive = false)
                 }
             )
         }
     }
+}
+
+/** Carries the accepted pass, and how it was verified, into the face-capture step. */
+private fun ScanIntake.Accepted.toRoute(): String {
+    val signed = source == ScanSource.SIGNED_PASS
+    return "biometric_verification/${Uri.encode(jwt)}" +
+        "?nonce=${Uri.encode(nonce.orEmpty())}&signed=$signed"
 }

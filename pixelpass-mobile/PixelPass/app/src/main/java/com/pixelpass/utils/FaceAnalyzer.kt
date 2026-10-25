@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
+import android.graphics.Matrix
 import android.graphics.Rect
 import android.graphics.YuvImage
 import android.util.Base64
@@ -14,15 +15,25 @@ import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
 import java.io.ByteArrayOutputStream
 
-class FaceAnalyzer(private val onFaceExtracted: (String) -> Unit) : ImageAnalysis.Analyzer {
+enum class FaceDetectionStatus {
+    NO_FACE,
+    OFF_CENTER,
+    TOO_FAR,
+    ALIGNED
+}
 
-    // We only need the bounding box now, so we can use the absolute fastest settings
+class FaceAnalyzer(
+    private val onStatusUpdate: (FaceDetectionStatus) -> Unit,
+    private val onFaceExtracted: (String) -> Unit
+) : ImageAnalysis.Analyzer {
+
     private val options = FaceDetectorOptions.Builder()
         .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
         .build()
 
     private val detector = FaceDetection.getClient(options)
     private var isAnalyzing = true
+    private var consecutiveAlignedFrames = 0
 
     @SuppressLint("UnsafeOptInUsageError")
     override fun analyze(imageProxy: ImageProxy) {
@@ -32,46 +43,71 @@ class FaceAnalyzer(private val onFaceExtracted: (String) -> Unit) : ImageAnalysi
 
             detector.process(image)
                 .addOnSuccessListener { faces ->
-                    // Only process if exactly ONE face is in frame (prevents scanning people in the background)
+                    if (!isAnalyzing) return@addOnSuccessListener
+
                     if (faces.size == 1) {
                         val face = faces.first()
                         val boundingBox = face.boundingBox
 
-                        // Ensure the face is close enough to the camera (e.g., box is at least 300px wide)
-                        if (boundingBox.width() > 300) {
-                            isAnalyzing = false // Lock scanner
+                        val frameWidth = imageProxy.width
+                        val frameHeight = imageProxy.height
 
-                            // 1. Convert ImageProxy (YUV format) to a standard Bitmap
-                            val bitmap = imageProxyToBitmap(imageProxy)
+                        val faceWidth = boundingBox.width()
+                        val centerX = boundingBox.centerX()
+                        val centerY = boundingBox.centerY()
 
-                            if (bitmap != null) {
-                                // 2. Crop the Bitmap to just the face bounding box
-                                // Add a 10% margin so we don't chop off the chin/hairline
-                                val marginX = (boundingBox.width() * 0.1).toInt()
-                                val marginY = (boundingBox.height() * 0.1).toInt()
+                        // Minimum face width requirement relative to frame
+                        val minWidth = (frameWidth * 0.25f).toInt()
 
-                                val safeRect = Rect(
-                                    maxOf(0, boundingBox.left - marginX),
-                                    maxOf(0, boundingBox.top - marginY),
-                                    minOf(bitmap.width, boundingBox.right + marginX),
-                                    minOf(bitmap.height, boundingBox.bottom + marginY)
-                                )
+                        // Check if face is centered in the frame
+                        val isCenteredX = centerX in (frameWidth * 0.25f).toInt()..(frameWidth * 0.75f).toInt()
+                        val isCenteredY = centerY in (frameHeight * 0.20f).toInt()..(frameHeight * 0.80f).toInt()
 
-                                val croppedFace = Bitmap.createBitmap(
-                                    bitmap,
-                                    safeRect.left,
-                                    safeRect.top,
-                                    safeRect.width(),
-                                    safeRect.height()
-                                )
+                        if (faceWidth < minWidth) {
+                            onStatusUpdate(FaceDetectionStatus.TOO_FAR)
+                            consecutiveAlignedFrames = 0
+                        } else if (!isCenteredX || !isCenteredY) {
+                            onStatusUpdate(FaceDetectionStatus.OFF_CENTER)
+                            consecutiveAlignedFrames = 0
+                        } else {
+                            consecutiveAlignedFrames++
+                            onStatusUpdate(FaceDetectionStatus.ALIGNED)
 
-                                // 3. Compress to JPEG and encode to Base64
-                                val base64String = bitmapToBase64(croppedFace)
-                                onFaceExtracted(base64String)
-                            } else {
-                                isAnalyzing = true // Reset if conversion failed
+                            // Require 3 consecutive stable frames within bounds before capturing
+                            if (consecutiveAlignedFrames >= 3) {
+                                isAnalyzing = false // Lock scanner
+                                val bitmap = imageProxyToBitmap(imageProxy)
+
+                                if (bitmap != null) {
+                                    val marginX = (boundingBox.width() * 0.1).toInt()
+                                    val marginY = (boundingBox.height() * 0.1).toInt()
+
+                                    val safeRect = Rect(
+                                        maxOf(0, boundingBox.left - marginX),
+                                        maxOf(0, boundingBox.top - marginY),
+                                        minOf(bitmap.width, boundingBox.right + marginX),
+                                        minOf(bitmap.height, boundingBox.bottom + marginY)
+                                    )
+
+                                    val croppedFace = Bitmap.createBitmap(
+                                        bitmap,
+                                        safeRect.left,
+                                        safeRect.top,
+                                        safeRect.width(),
+                                        safeRect.height()
+                                    )
+
+                                    val base64String = bitmapToBase64(croppedFace)
+                                    onFaceExtracted(base64String)
+                                } else {
+                                    isAnalyzing = true
+                                    consecutiveAlignedFrames = 0
+                                }
                             }
                         }
+                    } else {
+                        onStatusUpdate(FaceDetectionStatus.NO_FACE)
+                        consecutiveAlignedFrames = 0
                     }
                 }
                 .addOnCompleteListener { imageProxy.close() }
@@ -80,11 +116,8 @@ class FaceAnalyzer(private val onFaceExtracted: (String) -> Unit) : ImageAnalysi
         }
     }
 
-    // --- Helper Functions ---
-
     private fun bitmapToBase64(bitmap: Bitmap): String {
         val outputStream = ByteArrayOutputStream()
-        // Compress to 80% quality to save bandwidth while retaining recognition detail
         bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
         val byteArray = outputStream.toByteArray()
         return Base64.encodeToString(byteArray, Base64.NO_WRAP)
@@ -114,12 +147,8 @@ class FaceAnalyzer(private val onFaceExtracted: (String) -> Unit) : ImageAnalysi
 
         val rawBitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
 
-        // Android camera sensor data is often rotated 90 degrees natively.
-        // We must rotate the bitmap based on the ImageProxy rotation metadata.
-        val matrix = android.graphics.Matrix()
+        val matrix = Matrix()
         matrix.postRotate(imageProxy.imageInfo.rotationDegrees.toFloat())
-
-        // If it's the front camera, we also need to mirror it horizontally
         matrix.postScale(-1f, 1f, rawBitmap.width / 2f, rawBitmap.height / 2f)
 
         return Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)

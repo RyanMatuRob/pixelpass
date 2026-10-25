@@ -4,6 +4,8 @@ import android.content.Context
 import com.pixelpass.core.PixelPassLog
 import com.pixelpass.data.local.PixelPassDatabase
 import com.pixelpass.data.session.SessionStore
+import com.pixelpass.scan.ScanRepository
+import com.pixelpass.scan.ScanSyncScheduler
 import com.pixelpass.security.DeviceKeyStore
 import com.pixelpass.utils.LocationGeohashProvider
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +27,17 @@ class AppContainer(context: Context) {
     val sessionStore: SessionStore by lazy { SessionStore(appContext) }
 
     val deviceKeyStore: DeviceKeyStore by lazy { DeviceKeyStore() }
+
+    /**
+     * Guard-side scan pipeline. Anything that cannot reach the gateway is queued
+     * in `pending_sync_scans`; the callback schedules the replay worker.
+     */
+    val scanRepository: ScanRepository by lazy {
+        ScanRepository(
+            pendingSyncScanDao = database.pendingSyncScanDao(),
+            onQueued = { ScanSyncScheduler.enqueue(appContext) }
+        )
+    }
 
     private val locationGeohashProvider: LocationGeohashProvider by lazy {
         LocationGeohashProvider(appContext)
