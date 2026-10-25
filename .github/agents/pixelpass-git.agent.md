@@ -56,8 +56,8 @@ Verified environment and state:
 - 21 labels exist: GitHub's ten defaults (`accessibility`, `bug`, `documentation`, `duplicate`, `enhancement`, `good first issue`, `help wanted`, `invalid`, `question`, `wontfix`), which are kept, plus the eleven delivery labels `mobile`, `backend`, `ml`, `admin`, `testing`, `deployment`, `docs`, `tooling`, `security`, `blocked`, `tech-debt`.
 - Project board: `PixelPass Roadmap` is user project **#2** at `https://github.com/users/RyanMatuRob/projects/2` (id `PVT_kwHOCgn0zM4BoY1g`), linked to `RyanMatuRob/pixelpass`, holding all 43 issues as items (27 `Todo`, 1 `In Progress`, 15 `Done`) with views `All Items` (table), `Kanban` (board, grouped by `Status`), and `By Milestone` (board, grouped by `Milestone`). The grouping was set by hand on 2026-10-23 because the API cannot write it, and doing so flipped both boards to `TABLE_LAYOUT`, so `layout: BOARD_LAYOUT` had to be re-applied afterwards. User project #1 (`@RyanMatuRob's untitled project`, empty) was deleted on 2026-10-23 at the user's request; #2 is the only project, so never create a second one.
 - `origin/main` is 1 commit ahead of `origin/develop` and 0 behind: PR #29 (`develop` -> `main`) is already merged. No release PR is pending. The local `main` ref is stale, so always `git fetch origin --prune` and compare `origin/main...origin/develop` before reasoning about release state.
-- 2 local branches (`develop`, `main`) and 2 remote heads (`origin/develop`, `origin/main`) exist; no concern branches remain. 18 PRs exist: #29 closes `develop` -> `main`; #3, #4, #9, #10 were closed without merge and are superseded; #59, #60, #61 are the merged bootstrap PRs; every other PR is merged. Verified 2026-10-23 before deletion with `git rev-list --count origin/develop..origin/<branch>`: 11 concern branches were ancestors of `develop` (`chore/mobile-jdk17-toolchain`, `chore/repo-tooling`, `feat/admin-console`, `feat/backend-admin-apis`, `feat/backend-auth-login`, `feat/backend-structure`, `feat/mobile-add-folder`, `feat/mobile-qr-generator-ui`, `feat/mobile-scan-biometric`, `feat/mobile-signin`, `feat/scan-ml-mobile-untracked-assets`), and 4 (`feat/ml-service-folder-addition`, `feat/ml-service-folder-addition-issue7`, `feat/mobile-folder-addition`, `feat/mobile-folder-addition-issue8`) held one obsolete commit each whose added paths all already existed in `develop` (2 and 17 paths respectively, 0 missing). Local `feature/qr-generator-ui` was a duplicate of `feat/mobile-qr-generator-ui` that introduced no paths. No branch held unique content, so cleanup was deletion-only with no cherry-picks, applied 2026-10-23 with user approval.
-- A stray `mlservice/` Python virtual environment sits at the repository root untracked. `pixelpass-ml-service/venv` and `__pycache__` are not tracked; `pixelpass-ml-service/__pycache__/main.cpython-313.pyc` is tracked and should be removed by a tooling issue.
+- 2 local branches (`develop`, `main`) and 2 remote heads (`origin/develop`, `origin/main`) exist; no concern branches remain. 19 PRs exist: #29 closes `develop` -> `main`; #3, #4, #9, #10 were closed without merge and are superseded; #59, #60, #61, #62 are the merged bootstrap PRs and #64 delivered the Python hygiene issue #63; every other PR is merged. Verified 2026-10-23 before deletion with `git rev-list --count origin/develop..origin/<branch>`: 11 concern branches were ancestors of `develop` (`chore/mobile-jdk17-toolchain`, `chore/repo-tooling`, `feat/admin-console`, `feat/backend-admin-apis`, `feat/backend-auth-login`, `feat/backend-structure`, `feat/mobile-add-folder`, `feat/mobile-qr-generator-ui`, `feat/mobile-scan-biometric`, `feat/mobile-signin`, `feat/scan-ml-mobile-untracked-assets`), and 4 (`feat/ml-service-folder-addition`, `feat/ml-service-folder-addition-issue7`, `feat/mobile-folder-addition`, `feat/mobile-folder-addition-issue8`) held one obsolete commit each whose added paths all already existed in `develop` (2 and 17 paths respectively, 0 missing). Local `feature/qr-generator-ui` was a duplicate of `feat/mobile-qr-generator-ui` that introduced no paths. No branch held unique content, so cleanup was deletion-only with no cherry-picks, applied 2026-10-23 with user approval.
+- A stray `mlservice/` Python virtual environment sits at the repository root untracked and is now ignored by `/mlservice/` in the root `.gitignore`. Python hygiene was closed out by #63 (PR #64): `pixelpass-ml-service/__pycache__/main.cpython-313.pyc` is untracked and `pixelpass-ml-service/.gitignore` covers `__pycache__/`, `*.py[cod]`, `venv/`, and `.venv/`, so no bytecode path is tracked.
 
 ## Naming Decision Record
 
@@ -248,10 +248,11 @@ concern branch --> develop (integration, all merges) --> release PR --> main (de
 | Issue created | open, one milestone, area label | `Todo` |
 | Concern branch started | open, branch linked in a comment | `In Progress` |
 | Pull request opened | open, PR body references the issue | `In Review` when available, else `In Progress` |
-| PR merged into `develop` | closed via `Closes #n` | `Done` |
+| PR merged into `develop` | close it yourself: `gh issue close <n> --reason completed`, next to the project status edit | `Done` |
 | Release PR merged into `main` | release issue closed | `Done`, milestone closed when its exit criteria are met |
 
 - Do not close an issue unless its acceptance criteria are demonstrably met.
+- A `Closes #n` line in the PR body is still required, but it does not close anything on this repository: GitHub only auto-closes for pull requests into the default branch, which is `main`, while concern PRs target `develop`. Closing is therefore always an explicit `gh issue close <n> --reason completed`. The board status still follows the issue state, so the item reaches `Done` once the issue is closed.
 - Do not reopen a closed issue to add scope; open a new one and reference it.
 - If an issue is blocked, add the `blocked` label and a comment naming the blocker; leave the status unchanged.
 
@@ -427,7 +428,7 @@ Update this table in place during Phase 7. Keep it truthful; `Pending` is a vali
 | Labels | applied - 11 delivery labels created with colours and descriptions, 21 total; GitHub's ten defaults kept |
 | Milestones | applied - canonical four created (#5-#8) with descriptions and populated; legacy four closed at 0/0 |
 | Issue re-homing | applied - 14 closed issues and merged PRs #2, #21-#28 moved to canonical milestones and labels; #30 closed as not planned |
-| Progress log | 43 issue rows seeded; PR column filled for merged PRs #2, #12, #21-#28, #59, #60, #61 |
+| Progress log | 44 issue rows seeded; PR column filled for merged PRs #2, #12, #21-#28, #59, #60, #61, #64 |
 | Bootstrap issue | #31 `Repo: bootstrap milestones, issues, and project board` (milestone 4, label `tooling`, board status `In Progress` until the Phase 7 close-out) |
 | Project board | applied - user project #2 `PixelPass Roadmap` created 2026-10-23, linked to `RyanMatuRob/pixelpass`, 43 items (27 `Todo`, 1 `In Progress`, 15 `Done`); the empty user project #1 was deleted the same day |
 | Kanban views | applied - `All Items` (table), `Kanban` (board, grouped by `Status`), `By Milestone` (board, grouped by `Milestone`) created through GraphQL, with the grouping set by hand and the board layout re-applied |
@@ -482,6 +483,7 @@ This is the running summary for every issue and every pull request. It is append
 | #56 | 4. Testing and Deployment | - | Open | Containerize and deploy services |
 | #57 | 4. Testing and Deployment | - | Open | Release v1.0 to main |
 | #58 | 4. Testing and Deployment | - | Open | Refresh README, API reference, and runbooks |
+| #63 | 4. Testing and Deployment | #64 | Closed | Untracked Python bytecode and ignored local virtualenvs |
 
 Rules:
 - Add the issue row in the same step that creates or re-homes the issue. Keep the outcome to one line and describe delivery, not activity.
