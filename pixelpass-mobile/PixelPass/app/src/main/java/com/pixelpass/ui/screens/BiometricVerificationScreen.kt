@@ -13,7 +13,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.pixelpass.PixelPassApp
 import com.pixelpass.scan.ScanOutcome
@@ -31,7 +30,8 @@ import kotlinx.coroutines.withContext
  * Face capture for one pass that [com.pixelpass.scan.ScanGate] already accepted.
  *
  * The gateway has the final say. When it cannot be reached the repository queues
- * the attempt and only a signed pass may be approved provisionally offline.
+ * the attempt and only a signed pass may be approved provisionally offline. The
+ * decision is handed to [ScanVerdictScreen], which owns the whole screen.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,7 +39,7 @@ fun BiometricVerificationScreen(
     jwt: String,
     nonce: String?,
     signed: Boolean,
-    onVerificationComplete: () -> Unit
+    onOutcome: (ScanOutcome) -> Unit
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -127,6 +127,7 @@ fun BiometricVerificationScreen(
                                             outcome = result
                                             statusText = result.headline
                                             isProcessing = false
+                                            onOutcome(result)
                                         }
                                     }
                                 },
@@ -140,57 +141,7 @@ fun BiometricVerificationScreen(
                 )
             }
 
-            outcome?.let { result ->
-                Spacer(modifier = Modifier.height(24.dp))
-                ScanOutcomeCard(result = result, onScanNext = onVerificationComplete)
-            }
-
             Spacer(modifier = Modifier.height(24.dp))
-        }
-    }
-}
-
-@Composable
-private fun ScanOutcomeCard(result: ScanOutcome, onScanNext: () -> Unit) {
-    Surface(
-        color = if (result.granted) Color(0xFFDCFCE7) else Color(0xFFFEE2E2),
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = result.headline,
-                style = AppTypography.headlineMedium,
-                color = if (result.granted) Color(0xFF166534) else Color(0xFF991B1B),
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = result.detail,
-                style = AppTypography.bodyLarge,
-                color = Color.Black,
-                textAlign = TextAlign.Center
-            )
-            if (result.queuedForSync) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Queued for gateway sync",
-                    style = AppTypography.bodySmall,
-                    color = Color(0xFF92400E),
-                    textAlign = TextAlign.Center
-                )
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = onScanNext,
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF111827))
-            ) {
-                Text("Scan next pass", color = Color.White)
-            }
         }
     }
 }
