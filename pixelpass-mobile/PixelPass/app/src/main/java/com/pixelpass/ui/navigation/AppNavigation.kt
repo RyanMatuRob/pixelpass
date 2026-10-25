@@ -26,7 +26,7 @@ fun PixelPassNavigation(session: UserSession, onSignOut: () -> Unit) {
     NavHost(navController = navController, startDestination = startDestination) {
         composable(ROUTE_QR_GENERATOR) {
             QrGeneratorScreen(
-                token = session.token,
+                session = session,
                 onBackClick = onSignOut,
                 onProfileClick = onSignOut
             )

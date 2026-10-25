@@ -5,6 +5,7 @@ import com.pixelpass.core.PixelPassLog
 import com.pixelpass.data.local.PixelPassDatabase
 import com.pixelpass.data.session.SessionStore
 import com.pixelpass.security.DeviceKeyStore
+import com.pixelpass.utils.LocationGeohashProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,6 +25,16 @@ class AppContainer(context: Context) {
     val sessionStore: SessionStore by lazy { SessionStore(appContext) }
 
     val deviceKeyStore: DeviceKeyStore by lazy { DeviceKeyStore() }
+
+    private val locationGeohashProvider: LocationGeohashProvider by lazy {
+        LocationGeohashProvider(appContext)
+    }
+
+    /**
+     * Coarse geohash stamped into the pass. Empty when the user has not granted
+     * location access or no provider has a fix yet, which must not block a pass.
+     */
+    fun locationGeohash(): String = locationGeohashProvider.currentGeohash()
 
     /** The Keystore key pair is created once, off the main thread, before the first pass. */
     fun prepareDeviceIdentity() {
