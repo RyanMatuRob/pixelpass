@@ -1,7 +1,13 @@
 import { useState } from 'react';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Shield, Mail, Lock, EyeOff, Eye, ArrowRight, Phone } from 'lucide-react';
+import api from '../api/client';
+import { getRole, getToken, saveSession } from '../auth/storage';
 
 export default function Login() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
   // Form States
   const [loginMethod, setLoginMethod] = useState('email'); // 'email' or 'phone'
   const [identifier, setIdentifier] = useState('');
@@ -11,29 +17,41 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Already holding an admin session: skip the form.
+  if (getToken() && getRole() === 'ADMIN') {
+    return <Navigate to={location.state?.from || '/dashboard'} replace />;
+  }
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await fetch('http://localhost:3000/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier, password, keepSignedIn })
+      // requireAdmin makes the API refuse non-admin accounts with a 403.
+      const { data } = await api.post('/api/auth/login', {
+        identifier,
+        password,
+        keepSignedIn,
+        requireAdmin: true
       });
 
-      const data = await response.json();
+      saveSession({
+        token: data.token,
+        role: data.role,
+        name: [data.user?.firstName, data.user?.lastName].filter(Boolean).join(' ') || data.user?.email
+      });
 
-      if (response.ok) {
-        // Save token to localStorage and redirect
-        localStorage.setItem('pixelpass_token', data.token);
-        window.location.href = '/'; 
+      navigate(location.state?.from || '/dashboard', { replace: true });
+    } catch (err) {
+      const status = err.response?.status;
+      if (status === 403) {
+        setError(err.response?.data?.error || 'This account is not allowed to use the admin console.');
+      } else if (status === 401) {
+        setError('Invalid email or password.');
       } else {
-        setError(data.error || "Login failed");
+        setError('Network error. Check connection.');
       }
-    } catch {
-      setError("Network error. Check connection.");
     } finally {
       setIsLoading(false);
     }

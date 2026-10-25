@@ -4,8 +4,9 @@ const VisitorInvite = require('../models/VisitorInvite');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const User = require('../models/User'); // We need this to create the temporary user
-// POST /api/visitors/invite - Create a new visitor invitation
-router.post('/invite', async (req, res) => {
+const { requireAdmin } = require('../middlewares/auth');
+// POST /api/visitors/invite - Create a new visitor invitation (admin console only)
+router.post('/invite', requireAdmin, async (req, res) => {
     try {
         const { visitorName, visitorEmail, validFrom, validUntil } = req.body;
 
