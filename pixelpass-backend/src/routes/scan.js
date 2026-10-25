@@ -8,6 +8,52 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const ML_SERVICE_URL = 'http://127.0.0.1:8000/predict';
 
+// Revoked accounts and visitors outside their invitation window are refused before the ML
+// service is called: the decision needs no face comparison.
+const accountDenialReason = (user, now) => {
+    if (user.isActive === false) {
+        return 'Account access has been revoked.';
+    }
+    if (user.roleCategory !== 'VISITOR') {
+        return null;
+    }
+    if (user.accessValidFrom && now < user.accessValidFrom) {
+        return 'Visitor pass is not active yet.';
+    }
+    if (user.accessValidUntil && now > user.accessValidUntil) {
+        return 'Visitor pass has expired.';
+    }
+
+    return null;
+};
+
+// The console should still see refused attempts, so they land in the audit feed with no
+// biometric score of their own.
+const recordDenial = async ({ req, userId, roleCategory, reason }) => {
+    const body = req.body || {};
+    const coordinate = body.terminalCoordinate || {};
+
+    try {
+        await AccessLog.create({
+            userId: String(userId),
+            roleCategory: String(roleCategory || 'VISITOR'),
+            terminalCoordinate: {
+                latitude: Number(coordinate.latitude) || 0,
+                longitude: Number(coordinate.longitude) || 0
+            },
+            deviceFingerprint: body.deviceFingerprint || 'unknown-device',
+            biometricConfidence: 0,
+            biometricOutcome: false,
+            isAnomaly: false,
+            anomalyScore: 0,
+            anomalyReason: reason,
+            accessDecision: 'DENIED'
+        });
+    } catch (error) {
+        console.error('Could not record denied scan:', error.message);
+    }
+};
+
 router.post('/', async (req, res) => {
     try {
         // The mobile app now sends faceImageBase64 instead of scores
@@ -39,13 +85,27 @@ router.post('/', async (req, res) => {
             });
         }
 
-        // 3. Extract ML Temporal Features
+        // 3. Refuse revoked accounts and visitors outside their invitation window before the
+        // model is consulted; the attempt is still recorded for the console.
         const now = new Date();
+        const denial = accountDenialReason(user, now);
+        if (denial) {
+            await recordDenial({ req, userId, roleCategory: roleCategory || user.roleCategory, reason: denial });
+
+            return res.status(403).json({
+                access: 'DENIED',
+                decision: 'DENIED',
+                reason: denial,
+                anomalyReason: denial
+            });
+        }
+
+        // 4. Extract ML Temporal Features
         const hour_of_day = now.getHours();
         const jsDay = now.getDay();
         const day_of_week = jsDay === 0 ? 6 : jsDay - 1; 
 
-        // 4. Calculate Velocity
+        // 5. Calculate Velocity
         const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
         
         const lastScan = await AccessLog.findOne({ userId }).sort({ timestamp: -1 });
@@ -59,7 +119,7 @@ router.post('/', async (req, res) => {
         });
         const scan_frequency_1h = pastScans + 1; 
 
-        // 5. Query the Python FastAPI Microservice
+        // 6. Query the Python FastAPI Microservice
         const mlPayload = {
             roleCategory,
             hour_of_day,
@@ -78,7 +138,7 @@ router.post('/', async (req, res) => {
         if (!mlResponse.ok) throw new Error('ML Microservice unreachable');
         const mlData = await mlResponse.json(); 
 
-        // 6. Explain the model's verdict and record the operator-facing decision
+        // 7. Explain the model's verdict and record the operator-facing decision
         const accessDecision = decideAccess({
             biometricMatch: mlData.biometric_match,
             isAnomaly: mlData.is_anomaly
@@ -92,7 +152,7 @@ router.post('/', async (req, res) => {
             hourOfDay: hour_of_day
         });
 
-        // 7. Save the transaction to MongoDB
+        // 8. Save the transaction to MongoDB
         const log = new AccessLog({
             userId,
             roleCategory,
@@ -108,7 +168,7 @@ router.post('/', async (req, res) => {
         });
         await log.save();
 
-        // 8. Return the final decision to the Security Guard's device. `access` keeps the
+        // 9. Return the final decision to the Security Guard's device. `access` keeps the
         // GRANTED/DENIED wording the mobile app already understands; `decision` adds the
         // provisional label and `anomalyReason` explains any ML flag to the console.
         if (!mlData.biometric_match) {

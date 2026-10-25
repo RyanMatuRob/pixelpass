@@ -1,9 +1,12 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 
 export default function VisitorEnrollment() {
-  const { token } = useParams();
+  const { token: pathToken } = useParams();
+  const [searchParams] = useSearchParams();
+  // Invite links minted by the API carry the token as ?token=; older links keep it in the path.
+  const token = pathToken || searchParams.get('token') || '';
   
   const [step, setStep] = useState(1); // 1 = Upload, 2 = Success (Show QR)
   const [previewImage, setPreviewImage] = useState(null);
