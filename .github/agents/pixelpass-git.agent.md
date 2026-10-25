@@ -428,7 +428,7 @@ Update this table in place during Phase 7. Keep it truthful; `Pending` is a vali
 | Labels | applied - 11 delivery labels created with colours and descriptions, 21 total; GitHub's ten defaults kept |
 | Milestones | applied - canonical four created (#5-#8) with descriptions and populated; legacy four closed at 0/0 |
 | Issue re-homing | applied - 14 closed issues and merged PRs #2, #21-#28 moved to canonical milestones and labels; #30 closed as not planned |
-| Progress log | 49 issue rows; PR column filled for merged PRs #2, #12, #21-#28, #59-#61, #64, #67, #69, #71, #73, #76 (rows #66, #68, #70, #72, #75 recorded 2026-10-25) |
+| Progress log | 50 issue rows; PR column filled for merged PRs #2, #12, #21-#28, #59-#61, #64, #67, #69, #71, #73, #76, #79 (rows #66, #68, #70, #72, #75, #78 recorded 2026-10-25) |
 | Bootstrap issue | #31 `Repo: bootstrap milestones, issues, and project board` (milestone 4, label `tooling`, board status `In Progress` until the Phase 7 close-out) |
 | Project board | applied - user project #2 `PixelPass Roadmap` created 2026-10-23, linked to `RyanMatuRob/pixelpass`, 43 items (27 `Todo`, 1 `In Progress`, 15 `Done`); the empty user project #1 was deleted the same day |
 | Kanban views | applied - `All Items` (table), `Kanban` (board, grouped by `Status`), `By Milestone` (board, grouped by `Milestone`) created through GraphQL, with the grouping set by hand and the board layout re-applied |
@@ -489,6 +489,7 @@ This is the running summary for every issue and every pull request. It is append
 | #70 | 1. Mobile App Implementation | #71 | Merged 2026-10-25 | Rotating signed pass payload issued, encoded, and verified offline |
 | #72 | 1. Mobile App Implementation | #73 | Merged 2026-10-25 | Local scan gate, offline queue, and deferred replay |
 | #75 | 1. Mobile App Implementation | #76 | Merged 2026-10-25 | Nonce replay cache plus four full-screen scan verdicts |
+| #78 | 3. Backend Implementation | #79 | Merged 2026-10-25 | Faker volume seed of 173 users across five roles |
 
 Rules:
 - Add the issue row in the same step that creates or re-homes the issue. Keep the outcome to one line and describe delivery, not activity.
