@@ -26,17 +26,16 @@ router.post('/', async (req, res) => {
             user = await User.findById(userId);
         } else {
             // If the JWT contains a custom string like "STF-001", search your custom fields.
-            // Ensure one of these fields matches what you actually use in your User schema.
-            user = await User.findOne({ 
+            user = await User.findOne({
                 $or: [ { userId: userId }, { employeeId: userId }, { email: userId } ] 
             });
         }
-                if (!user || !user.referenceFaceBase64) {
-                    return res.status(404).json({ 
-                        access: 'DENIED', 
-                        reason: 'No biometric reference photo found on file.' 
-                    });
-                }
+        if (!user || !user.referenceFaceBase64) {
+            return res.status(404).json({
+                access: 'DENIED',
+                reason: 'No biometric reference photo found on file.'
+            });
+        }
 
         // 3. Extract ML Temporal Features
         const now = new Date();
@@ -59,7 +58,6 @@ router.post('/', async (req, res) => {
         const scan_frequency_1h = pastScans + 1; 
 
         // 5. Query the Python FastAPI Microservice
-        // We now send both faces AND the behavioral metrics to Python
         const mlPayload = {
             roleCategory,
             hour_of_day,
@@ -77,7 +75,6 @@ router.post('/', async (req, res) => {
 
         if (!mlResponse.ok) throw new Error('ML Microservice unreachable');
         const mlData = await mlResponse.json(); 
-        // mlData will now contain the calculated biometric confidence from DeepFace!
 
         // 6. Save the transaction to MongoDB
         const log = new AccessLog({
@@ -85,8 +82,8 @@ router.post('/', async (req, res) => {
             roleCategory,
             terminalCoordinate,
             deviceFingerprint,
-            biometricConfidence: mlData.biometric_confidence, // Provided by Python
-            biometricOutcome: mlData.biometric_match,         // Provided by Python
+            biometricConfidence: mlData.biometric_confidence,
+            biometricOutcome: mlData.biometric_match,
             scanIntervalSeconds,
             isAnomaly: mlData.is_anomaly,
             anomalyScore: mlData.anomaly_score
@@ -102,17 +99,11 @@ router.post('/', async (req, res) => {
             });
         }
 
-        if (mlData.is_anomaly) {
-            return res.status(403).json({
-                access: 'DENIED',
-                reason: 'Behavioral Anomaly Detected',
-                score: mlData.anomaly_score
-            });
-        }
-
+        // If biometric match succeeds, grant entry (attaching anomaly flag for telemetry/logging)
         return res.status(200).json({
             access: 'GRANTED',
             message: 'Clear for entry',
+            isAnomaly: mlData.is_anomaly,
             score: mlData.anomaly_score
         });
 
