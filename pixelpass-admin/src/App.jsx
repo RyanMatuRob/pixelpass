@@ -16,6 +16,7 @@ function App() {
                 {/* Public: no admin shell, no session required */}
                 <Route path="/login" element={<Login />} />
                 <Route path="/enroll/:token" element={<VisitorEnrollment />} />
+                <Route path="/enroll" element={<VisitorEnrollment />} />
 
                 {/* Authenticated console */}
                 <Route element={<ProtectedRoute />}>
