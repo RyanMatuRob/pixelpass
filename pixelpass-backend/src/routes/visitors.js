@@ -62,10 +62,16 @@ router.post('/enroll/:token', async (req, res) => {
         }
 
         // 2. Create a Temporary User Profile for the Scanner to recognize
+        // The directory needs a first and last name, so split whatever the host typed on the invite.
+        const nameParts = String(invite.visitorName || 'Visitor').trim().split(/\s+/);
+        const firstName = nameParts[0];
+        const lastName = nameParts.slice(1).join(' ') || 'Visitor';
+
         const tempUser = new User({
-            name: invite.visitorName,
+            firstName,
+            lastName,
+            department: 'Visitor Reception',
             email: invite.visitorEmail,
-            role: 'Visitor',
             roleCategory: 'VISITOR', // Added to satisfy Mongoose
             password: 'TEMP_VISITOR_PASSWORD_' + Date.now(), // Added dummy password
             userId: 'VIS-' + crypto.randomBytes(4).toString('hex').toUpperCase(),

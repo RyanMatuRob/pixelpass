@@ -30,6 +30,15 @@ const ROLE_DISTRIBUTION = [
 
 const EXPECTED_USERS = ROLE_DISTRIBUTION.reduce((total, group) => total + group.count, 0);
 
+// Departments give the admin directory something realistic to group and filter by.
+const DEPARTMENTS = {
+    ADMIN: ['Registrar', 'Campus Operations', 'IT Services'],
+    SECURITY: ['Campus Security', 'Gate Operations'],
+    STAFF: ['Facilities', 'Finance', 'Library Services', 'Student Affairs', 'Catering'],
+    STUDENT: ['Computer Science', 'Electrical Engineering', 'Business Administration', 'Nursing'],
+    VISITOR: ['Visitor Reception']
+};
+
 const describeTarget = (uri) => uri.replace(/\/\/([^@/]+)@/, '//***@').split('?')[0];
 
 // userId, email and phoneNumber are unique indexes, so one random collision aborts the whole batch.
@@ -61,6 +70,9 @@ const buildUsers = async () => {
 
             users.push({
                 userId: uniqueValue(seen.userId, () => `usr_${faker.string.numeric(5)}`),
+                firstName,
+                lastName,
+                department: faker.helpers.arrayElement(DEPARTMENTS[group.roleCategory]),
                 email: uniqueValue(seen.email, () =>
                     faker.internet.email({ firstName, lastName, provider: 'pixelpass.dev' }).toLowerCase()
                 ),
