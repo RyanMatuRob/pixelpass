@@ -2,9 +2,59 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const AccessLog = require('../models/AccessLog');
 const User = require('../models/User'); // Import the User model
+const { describeAnomaly, decideAccess } = require('../utils/telemetry');
 const router = express.Router();
+
 const mongoose = require('mongoose');
-const ML_SERVICE_URL = 'http://127.0.0.1:8000/predict';
+// The ML service runs as its own App Service in production, so the endpoint is configurable.
+const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:8000';
+const ML_PREDICT_URL = `${ML_SERVICE_URL.replace(/\/+$/, '')}/predict`;
+
+// Revoked accounts and visitors outside their invitation window are refused before the ML
+// service is called: the decision needs no face comparison.
+const accountDenialReason = (user, now) => {
+    if (user.isActive === false) {
+        return 'Account access has been revoked.';
+    }
+    if (user.roleCategory !== 'VISITOR') {
+        return null;
+    }
+    if (user.accessValidFrom && now < user.accessValidFrom) {
+        return 'Visitor pass is not active yet.';
+    }
+    if (user.accessValidUntil && now > user.accessValidUntil) {
+        return 'Visitor pass has expired.';
+    }
+
+    return null;
+};
+
+// The console should still see refused attempts, so they land in the audit feed with no
+// biometric score of their own.
+const recordDenial = async ({ req, userId, roleCategory, reason }) => {
+    const body = req.body || {};
+    const coordinate = body.terminalCoordinate || {};
+
+    try {
+        await AccessLog.create({
+            userId: String(userId),
+            roleCategory: String(roleCategory || 'VISITOR'),
+            terminalCoordinate: {
+                latitude: Number(coordinate.latitude) || 0,
+                longitude: Number(coordinate.longitude) || 0
+            },
+            deviceFingerprint: body.deviceFingerprint || 'unknown-device',
+            biometricConfidence: 0,
+            biometricOutcome: false,
+            isAnomaly: false,
+            anomalyScore: 0,
+            anomalyReason: reason,
+            accessDecision: 'DENIED'
+        });
+    } catch (error) {
+        console.error('Could not record denied scan:', error.message);
+    }
+};
 
 router.post('/', async (req, res) => {
     try {
@@ -26,25 +76,38 @@ router.post('/', async (req, res) => {
             user = await User.findById(userId);
         } else {
             // If the JWT contains a custom string like "STF-001", search your custom fields.
-            // Ensure one of these fields matches what you actually use in your User schema.
-            user = await User.findOne({ 
+            user = await User.findOne({
                 $or: [ { userId: userId }, { employeeId: userId }, { email: userId } ] 
             });
         }
-                if (!user || !user.referenceFaceBase64) {
-                    return res.status(404).json({ 
-                        access: 'DENIED', 
-                        reason: 'No biometric reference photo found on file.' 
-                    });
-                }
+        if (!user || !user.referenceFaceBase64) {
+            return res.status(404).json({
+                access: 'DENIED',
+                reason: 'No biometric reference photo found on file.'
+            });
+        }
 
-        // 3. Extract ML Temporal Features
+        // 3. Refuse revoked accounts and visitors outside their invitation window before the
+        // model is consulted; the attempt is still recorded for the console.
         const now = new Date();
+        const denial = accountDenialReason(user, now);
+        if (denial) {
+            await recordDenial({ req, userId, roleCategory: roleCategory || user.roleCategory, reason: denial });
+
+            return res.status(403).json({
+                access: 'DENIED',
+                decision: 'DENIED',
+                reason: denial,
+                anomalyReason: denial
+            });
+        }
+
+        // 4. Extract ML Temporal Features
         const hour_of_day = now.getHours();
         const jsDay = now.getDay();
         const day_of_week = jsDay === 0 ? 6 : jsDay - 1; 
 
-        // 4. Calculate Velocity
+        // 5. Calculate Velocity
         const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
         
         const lastScan = await AccessLog.findOne({ userId }).sort({ timestamp: -1 });
@@ -58,8 +121,7 @@ router.post('/', async (req, res) => {
         });
         const scan_frequency_1h = pastScans + 1; 
 
-        // 5. Query the Python FastAPI Microservice
-        // We now send both faces AND the behavioral metrics to Python
+        // 6. Query the Python FastAPI Microservice
         const mlPayload = {
             roleCategory,
             hour_of_day,
@@ -69,7 +131,7 @@ router.post('/', async (req, res) => {
             reference_face_base64: user.referenceFaceBase64
         };
 
-        const mlResponse = await fetch(ML_SERVICE_URL, {
+        const mlResponse = await fetch(ML_PREDICT_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(mlPayload)
@@ -77,42 +139,57 @@ router.post('/', async (req, res) => {
 
         if (!mlResponse.ok) throw new Error('ML Microservice unreachable');
         const mlData = await mlResponse.json(); 
-        // mlData will now contain the calculated biometric confidence from DeepFace!
 
-        // 6. Save the transaction to MongoDB
+        // 7. Explain the model's verdict and record the operator-facing decision
+        const accessDecision = decideAccess({
+            biometricMatch: mlData.biometric_match,
+            isAnomaly: mlData.is_anomaly
+        });
+        const anomalyReason = describeAnomaly({
+            isAnomaly: mlData.is_anomaly,
+            previousLog: lastScan,
+            terminalCoordinate,
+            scanIntervalSeconds,
+            scanFrequencyOneHour: scan_frequency_1h,
+            hourOfDay: hour_of_day
+        });
+
+        // 8. Save the transaction to MongoDB
         const log = new AccessLog({
             userId,
             roleCategory,
             terminalCoordinate,
             deviceFingerprint,
-            biometricConfidence: mlData.biometric_confidence, // Provided by Python
-            biometricOutcome: mlData.biometric_match,         // Provided by Python
+            biometricConfidence: mlData.biometric_confidence,
+            biometricOutcome: mlData.biometric_match,
             scanIntervalSeconds,
             isAnomaly: mlData.is_anomaly,
-            anomalyScore: mlData.anomaly_score
+            anomalyScore: mlData.anomaly_score,
+            anomalyReason,
+            accessDecision
         });
         await log.save();
 
-        // 7. Return the final decision to the Security Guard's device
+        // 9. Return the final decision to the Security Guard's device. `access` keeps the
+        // GRANTED/DENIED wording the mobile app already understands; `decision` adds the
+        // provisional label and `anomalyReason` explains any ML flag to the console.
         if (!mlData.biometric_match) {
             return res.status(403).json({
                 access: 'DENIED',
+                decision: accessDecision,
                 reason: 'Facial Recognition Failed (Identity Mismatch)',
+                anomalyReason,
                 score: mlData.anomaly_score
             });
         }
 
-        if (mlData.is_anomaly) {
-            return res.status(403).json({
-                access: 'DENIED',
-                reason: 'Behavioral Anomaly Detected',
-                score: mlData.anomaly_score
-            });
-        }
-
+        // If biometric match succeeds, grant entry (attaching anomaly flag for telemetry/logging)
         return res.status(200).json({
             access: 'GRANTED',
+            decision: accessDecision,
             message: 'Clear for entry',
+            isAnomaly: mlData.is_anomaly,
+            anomalyReason,
             score: mlData.anomaly_score
         });
 

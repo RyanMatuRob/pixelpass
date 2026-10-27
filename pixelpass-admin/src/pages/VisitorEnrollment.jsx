@@ -1,9 +1,12 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 
 export default function VisitorEnrollment() {
-  const { token } = useParams();
+  const { token: pathToken } = useParams();
+  const [searchParams] = useSearchParams();
+  // Invite links minted by the API carry the token as ?token=; older links keep it in the path.
+  const token = pathToken || searchParams.get('token') || '';
   
   const [step, setStep] = useState(1); // 1 = Upload, 2 = Success (Show QR)
   const [previewImage, setPreviewImage] = useState(null);
@@ -27,7 +30,9 @@ export default function VisitorEnrollment() {
     setError(null);
 
     try {
-      const response = await fetch(`http://localhost:3000/api/visitors/enroll/${token}`, {
+      // Relative on purpose: the Vite dev server proxies /api to the backend, and the production
+      // console is served by the backend itself, so the visitor portal must never pin an origin.
+      const response = await fetch(`/api/visitors/enroll/${token}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ referenceFaceBase64: previewImage })
@@ -42,7 +47,7 @@ export default function VisitorEnrollment() {
       } else {
         setError(data.error || "Enrollment failed. Please contact the administrator.");
       }
-    } catch (err) {
+    } catch {
       setError("Network error. Please check your connection.");
     } finally {
       setIsSubmitting(false);

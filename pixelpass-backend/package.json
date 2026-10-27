@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
+    "seed:users": "node scripts/seedUsers.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -23,6 +24,7 @@
     "qrcode.react": "^4.2.0"
   },
   "devDependencies": {
+    "@faker-js/faker": "^10.6.0",
     "nodemon": "^3.1.14"
   }
 }

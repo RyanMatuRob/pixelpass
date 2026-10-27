@@ -1,0 +1,81 @@
+name: Deploy admin and API to Azure
+
+# Runs when a release lands on main (the release PR is the only path to main) and on demand.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pixelpass-admin/**'
+      - 'pixelpass-backend/**'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-backend-production
+  cancel-in-progress: false
+
+env:
+  # Azure App Service runs NODE|22-lts, so build with the same major version.
+  NODE_VERSION: '22.x'
+
+jobs:
+  build-and-deploy:
+    name: Build console and deploy unified app
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            pixelpass-admin/package-lock.json
+            pixelpass-backend/package-lock.json
+
+      - name: Install console dependencies
+        working-directory: pixelpass-admin
+        run: npm ci
+
+      - name: Build console into the backend
+        working-directory: pixelpass-admin
+        run: npm run build
+
+      - name: Verify the unified bundle
+        run: |
+          test -f pixelpass-backend/public/index.html
+          test -d pixelpass-backend/public/assets
+          du -sh pixelpass-backend/public
+
+      - name: Check backend syntax
+        working-directory: pixelpass-backend
+        run: |
+          node --check src/server.js
+          node --check src/routes/scan.js
+
+      - name: Check deployment configuration
+        env:
+          APP_NAME: ${{ vars.AZURE_BACKEND_APP_NAME }}
+          PUBLISH_PROFILE: ${{ secrets.AZURE_BACKEND_PUBLISH_PROFILE }}
+        run: |
+          if [ -z "${APP_NAME}" ]; then
+            echo "::error::Repository variable AZURE_BACKEND_APP_NAME is not set."
+            exit 1
+          fi
+          if [ -z "${PUBLISH_PROFILE}" ]; then
+            echo "::error::Repository secret AZURE_BACKEND_PUBLISH_PROFILE is not set."
+            exit 1
+          fi
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_BACKEND_APP_NAME }}
+          publish-profile: ${{ secrets.AZURE_BACKEND_PUBLISH_PROFILE }}
+          package: pixelpass-backend

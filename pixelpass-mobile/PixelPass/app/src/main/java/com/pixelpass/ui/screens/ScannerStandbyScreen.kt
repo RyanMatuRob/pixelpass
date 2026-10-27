@@ -20,16 +20,23 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
+import com.pixelpass.qr.PassVerdict
+import com.pixelpass.scan.ScanGate
+import com.pixelpass.scan.ScanIntake
 import com.pixelpass.ui.components.CameraPreview
 import com.pixelpass.ui.theme.*
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 fun ScannerStandbyScreen(
-    onQrScanned: (String) -> Unit,
-    onBackClick: () -> Unit = {}
+    onQrScanned: (ScanIntake.Accepted) -> Unit,
+    onBackClick: () -> Unit = {},
+    onReplayDetected: (String) -> Unit = {},
+    intake: suspend (String) -> ScanIntake = { ScanGate.intake(it) }
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val permissionsState = rememberMultiplePermissionsState(
         permissions = listOf(
             Manifest.permission.CAMERA,
@@ -41,6 +48,9 @@ fun ScannerStandbyScreen(
     // Hardware toggle states
     var isTorchOn by remember { mutableStateOf(false) }
     var lensFacing by remember { mutableIntStateOf(CameraSelector.LENS_FACING_BACK) }
+
+    // Reason shown over the viewfinder when a code is refused before face capture.
+    var rejection by remember { mutableStateOf<String?>(null) }
 
     if (!permissionsState.allPermissionsGranted) {
         Scaffold(
@@ -135,7 +145,26 @@ fun ScannerStandbyScreen(
                 CameraPreview(
                     lensFacing = lensFacing,
                     isTorchOn = isTorchOn,
-                    onQrScanned = { scannedJwt -> onQrScanned(scannedJwt) }
+                    onQrScanned = { raw ->
+                        // Local checks run first: nothing reaches face capture or the
+                        // gateway unless the pass itself is acceptable. A replayed
+                        // pass leaves the viewfinder and gets its own full screen.
+                        scope.launch {
+                            when (val result = intake(raw)) {
+                                is ScanIntake.Accepted -> {
+                                    rejection = null
+                                    onQrScanned(result)
+                                }
+
+                                is ScanIntake.Rejected -> if (result.verdict == PassVerdict.REPLAY) {
+                                    rejection = null
+                                    onReplayDetected(result.reason)
+                                } else {
+                                    rejection = result.reason
+                                }
+                            }
+                        }
+                    }
                 )
 
                 // Dark overlay to simulate scanning depth
@@ -172,9 +201,9 @@ fun ScannerStandbyScreen(
                 )
 
                 Text(
-                    "Align pass within corner brackets",
-                    color = Color.White,
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp)
+                    text = rejection ?: "Align pass within corner brackets",
+                    color = if (rejection == null) Color.White else Color(0xFFFCA5A5),
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
                 )
             }
 

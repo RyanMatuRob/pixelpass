@@ -3,6 +3,7 @@ import java.net.Inet4Address
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 // Add this below your plugins block
 fun getLocalIpAddress(): String {
@@ -67,13 +68,30 @@ android {
         compose = true
         buildConfig = true // Enable BuildConfig generation
     }
+    testOptions {
+        // Pure JVM tests use the real classes; android.util.Log is stubbed out
+        // instead of throwing so logging never fails a unit test.
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
+
+ksp {
+    // Room writes its schema JSON here so migrations can be diffed and inspected.
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
 
 dependencies {
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.gson)
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)

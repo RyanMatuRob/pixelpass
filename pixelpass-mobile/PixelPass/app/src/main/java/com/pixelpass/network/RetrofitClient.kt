@@ -1,6 +1,7 @@
 package com.pixelpass.network
 
 import com.pixelpass.BuildConfig
+import com.pixelpass.core.PixelPassLog
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -36,8 +37,14 @@ object RetrofitClient {
 
         // Only log network traffic in Debug mode to protect sensitive data in Production
         if (BuildConfig.DEBUG) {
-            val loggingInterceptor = HttpLoggingInterceptor().apply {
+            val loggingInterceptor = HttpLoggingInterceptor { message ->
+                PixelPassLog.d(PixelPassLog.NET, message)
+            }.apply {
+                // Full bodies are visible in Logcat and the Network Inspector while
+                // credentials are stripped from the headers before they are logged.
                 level = HttpLoggingInterceptor.Level.BODY
+                redactHeader("Authorization")
+                redactHeader("Cookie")
             }
             builder.addInterceptor(loggingInterceptor)
         }

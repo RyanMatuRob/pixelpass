@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import api, { errorMessage } from '../api/client';
 
 export default function VisitorEngine() {
   const [formData, setFormData] = useState({
@@ -20,20 +21,10 @@ export default function VisitorEngine() {
     setGeneratedLink(null);
 
     try {
-      const response = await fetch('http://localhost:3000/api/visitors/invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setGeneratedLink(data.link);
-      } else {
-        alert('Failed to generate invite');
-      }
-    } catch (error) {
-      alert('Network error');
+      const { data } = await api.post('/api/visitors/invite', formData);
+      setGeneratedLink(data.link);
+    } catch (err) {
+      alert(errorMessage(err, 'Failed to generate invite'));
     } finally {
       setIsGenerating(false);
     }

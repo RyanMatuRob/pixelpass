@@ -7,8 +7,17 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import com.pixelpass.scan.ScanDebouncer
 
+/**
+ * Feeds QR codes from the camera to the scanner screen.
+ *
+ * ML Kit reports the same barcode on every analysed frame, so [debounce] drops
+ * repeats of the code that is already being handled while still letting a
+ * rotated pass through immediately.
+ */
 class QrCodeAnalyzer(
+    private val debounce: ScanDebouncer = ScanDebouncer(),
     private val onQrCodeScanned: (String) -> Unit
 ) : ImageAnalysis.Analyzer {
 
@@ -19,38 +28,34 @@ class QrCodeAnalyzer(
 
     private val scanner = BarcodeScanning.getClient(options)
 
-    // Flag to prevent the scanner from triggering the callback 60 times a second
-    private var isScanning = true
-
     @SuppressLint("UnsafeOptInUsageError")
     override fun analyze(imageProxy: ImageProxy) {
         val mediaImage = imageProxy.image
-        if (mediaImage != null && isScanning) {
-            val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+        if (mediaImage == null) {
+            imageProxy.close()
+            return
+        }
 
-            scanner.process(image)
-                .addOnSuccessListener { barcodes ->
-                    for (barcode in barcodes) {
-                        barcode.rawValue?.let { jwt ->
-                            isScanning = false // Lock the scanner once we get a hit
-                            onQrCodeScanned(jwt)
-                            break
-                        }
+        val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+
+        scanner.process(image)
+            .addOnSuccessListener { barcodes ->
+                for (barcode in barcodes) {
+                    val payload = barcode.rawValue?.takeIf { it.isNotBlank() } ?: continue
+                    if (debounce.tryAcquire(payload)) {
+                        onQrCodeScanned(payload)
+                        break
                     }
                 }
-                .addOnFailureListener {
-                    // Ignore transient frame failures
-                }
-                .addOnCompleteListener {
-                    imageProxy.close() // MUST close the proxy to receive the next frame
-                }
-        } else {
-            imageProxy.close()
-        }
+            }
+            .addOnFailureListener {
+                // Ignore transient frame failures
+            }
+            .addOnCompleteListener {
+                imageProxy.close() // MUST close the proxy to receive the next frame
+            }
     }
 
-    // Call this to resume scanning after processing a visitor
-    fun resetScanner() {
-        isScanning = true
-    }
+    /** Call this to allow the pass that was just handled to be scanned again. */
+    fun resetScanner() = debounce.reset()
 }
