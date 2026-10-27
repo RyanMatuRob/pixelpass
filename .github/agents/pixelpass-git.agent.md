@@ -502,7 +502,7 @@ This is the running summary for every issue and every pull request. It is append
 | #55 | 4. Testing and Deployment | #104 | Merged 2026-10-27 | One-shot Azure provisioning script for phases 1 to 3, plus runbook fixes for `MONGO_URI`, the `ML_SERVICE_URL` shape, `--startup-file`, and the runtimes |
 | #107 | 4. Testing and Deployment | #108 | Merged 2026-10-27 | Azure deploys move from publish profiles to OIDC federated login, with a setup script and runbook rewrite |
 | #109 | 4. Testing and Deployment | #110 | Merged 2026-10-27 | OIDC setup script reads ids without JSON parsing, finds `az` off `PATH`, falls back to a managed identity, and registers immutable subjects |
-| #111 | 4. Testing and Deployment | - | Open | ML app exits 127 because the Oryx build output stays compressed in `output.tar.zst`, so `startup.sh` is missing at container start |
+| #111 | 4. Testing and Deployment | #113 | Merged 2026-10-27 | ML app boots from a runner-built package (`python-packages` plus `startup.sh`) with no platform build, and DeepFace gets the `tf-keras` shim it needs on TF 2.21 |
 
 
 
