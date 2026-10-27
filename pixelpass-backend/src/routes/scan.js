@@ -6,7 +6,9 @@ const { describeAnomaly, decideAccess } = require('../utils/telemetry');
 const router = express.Router();
 
 const mongoose = require('mongoose');
-const ML_SERVICE_URL = 'http://127.0.0.1:8000/predict';
+// The ML service runs as its own App Service in production, so the endpoint is configurable.
+const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:8000';
+const ML_PREDICT_URL = `${ML_SERVICE_URL.replace(/\/+$/, '')}/predict`;
 
 // Revoked accounts and visitors outside their invitation window are refused before the ML
 // service is called: the decision needs no face comparison.
@@ -129,7 +131,7 @@ router.post('/', async (req, res) => {
             reference_face_base64: user.referenceFaceBase64
         };
 
-        const mlResponse = await fetch(ML_SERVICE_URL, {
+        const mlResponse = await fetch(ML_PREDICT_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(mlPayload)
