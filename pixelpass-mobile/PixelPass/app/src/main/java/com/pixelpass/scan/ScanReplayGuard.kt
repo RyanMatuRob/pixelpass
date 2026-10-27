@@ -7,9 +7,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * How long a used nonce is remembered. A rotated pass only lives for
- * [com.pixelpass.qr.PASS_TTL_MILLIS], so half an hour covers every honest retry
- * and keeps the table small enough to prune on each claim.
+ * How long a used nonce is remembered. A pass only lives for
+ * [com.pixelpass.qr.PASS_TTL_MILLIS], so half an hour outlives every honest
+ * retry and keeps the table small enough to prune on each claim.
  */
 const val NONCE_RETENTION_MILLIS: Long = 30 * 60 * 1_000L
 

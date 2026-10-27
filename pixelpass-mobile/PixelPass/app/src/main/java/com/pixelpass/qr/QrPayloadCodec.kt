@@ -7,8 +7,14 @@ import java.security.PrivateKey
 import java.security.Signature
 import java.util.Base64
 
-/** How long one QR pass may be scanned before the app rotates it. */
-const val PASS_TTL_MILLIS: Long = 30_000L
+/**
+ * How long one QR pass stays scannable.
+ *
+ * The holder mints a pass on demand, so the window has to be long enough to
+ * line both phones up at the gate, and short enough that a screenshot taken
+ * earlier in the day stops working.
+ */
+const val PASS_TTL_MILLIS: Long = 15 * 60 * 1_000L
 
 /** Tolerated difference between the two phones' clocks during local checks. */
 const val PASS_CLOCK_SKEW_MILLIS: Long = 15_000L
@@ -22,9 +28,9 @@ data class ParsedPass(
 /**
  * Wire format for the QR pass: compact JSON with one-letter keys.
  *
- * `{"u","t","l","e","n","j","k","s"}`. The signature is ECDSA P-256 over the
- * canonical JSON *without* the `s` key, which keeps signing and verification
- * byte-for-byte identical on both phones.
+ * `{"u","t","l","e","n","o","j","k","s"}`. The signature is ECDSA P-256 over
+ * the canonical JSON *without* the `s` key, which keeps signing and
+ * verification byte-for-byte identical on both phones.
  */
 object QrPayloadCodec {
 
@@ -33,6 +39,7 @@ object QrPayloadCodec {
     private const val KEY_GEOHASH = "l"
     private const val KEY_FACE = "e"
     private const val KEY_NONCE = "n"
+    private const val KEY_OTP = "o"
     private const val KEY_JWT = "j"
     private const val KEY_DEVICE_KEY = "k"
     private const val KEY_SIGNATURE = "s"
@@ -46,6 +53,7 @@ object QrPayloadCodec {
         payload.geohash?.takeIf { it.isNotEmpty() }?.let { addProperty(KEY_GEOHASH, it) }
         payload.faceEmbeddingBase64?.takeIf { it.isNotEmpty() }?.let { addProperty(KEY_FACE, it) }
         addProperty(KEY_NONCE, payload.nonce)
+        payload.otp?.takeIf { it.isNotEmpty() }?.let { addProperty(KEY_OTP, it) }
         addProperty(KEY_JWT, payload.jwt)
         addProperty(KEY_DEVICE_KEY, payload.devicePublicKeyBase64)
     }.toString()
@@ -72,6 +80,7 @@ object QrPayloadCodec {
             geohash = json.optionalString(KEY_GEOHASH),
             faceEmbeddingBase64 = json.optionalString(KEY_FACE),
             nonce = json.requiredString(KEY_NONCE),
+            otp = json.optionalString(KEY_OTP),
             jwt = json.requiredString(KEY_JWT),
             devicePublicKeyBase64 = json.requiredString(KEY_DEVICE_KEY)
         )

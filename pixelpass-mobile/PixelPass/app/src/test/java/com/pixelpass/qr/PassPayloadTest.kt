@@ -79,6 +79,45 @@ class PassPayloadTest {
     }
 
     @Test
+    fun issuedPassCarriesTheFallbackCode() {
+        val issuer = PassPayloadIssuer(signer, clock = { now }, otpSource = { "004821" })
+
+        val pass = issuer.issue(session())
+
+        assertEquals("004821", pass.payload.otp)
+        assertTrue(QrPayloadCodec.canonicalJson(pass.payload).contains("\"o\":\"004821\""))
+        assertEquals("004821", QrPayloadCodec.parse(pass.encoded)?.payload?.otp)
+        assertTrue(PassVerifier.inspect(pass.encoded, now + 1_000).isGranted)
+    }
+
+    @Test
+    fun payloadWithoutACodeStillParsesAndVerifies() {
+        val payload = PassPayload(
+            userId = "user-1",
+            issuedAtEpochMillis = now,
+            nonce = "nonce-1",
+            otp = null,
+            jwt = jwt(subject = "user-1", expiresAtMillis = now + 60_000),
+            devicePublicKeyBase64 = signer.publicKeyBase64()
+        )
+        val signed = QrPayloadCodec.sign(payload, signer.keyPair.private)
+
+        assertFalse(QrPayloadCodec.canonicalJson(payload).contains("\"o\""))
+        assertNull(QrPayloadCodec.parse(signed)?.payload?.otp)
+        assertTrue(PassVerifier.inspect(signed, now).isGranted)
+    }
+
+    @Test
+    fun blankFallbackCodeIsOmittedInsteadOfSentEmpty() {
+        val issuer = PassPayloadIssuer(signer, clock = { now }, otpSource = { "   " })
+
+        val pass = issuer.issue(session())
+
+        assertNull(pass.payload.otp)
+        assertFalse(QrPayloadCodec.canonicalJson(pass.payload).contains("\"o\""))
+    }
+
+    @Test
     fun stalePassIsRejected() {
         val issuer = PassPayloadIssuer(signer, clock = { now })
 
@@ -134,12 +173,13 @@ class PassPayloadTest {
             geohash = "kzn6v7x",
             faceEmbeddingBase64 = "embedding",
             nonce = "nonce-1",
+            otp = "004821",
             jwt = "token",
             devicePublicKeyBase64 = "key"
         )
 
         assertEquals(
-            """{"u":"user-1","t":1760000000000,"l":"kzn6v7x","e":"embedding","n":"nonce-1","j":"token","k":"key"}""",
+            """{"u":"user-1","t":1760000000000,"l":"kzn6v7x","e":"embedding","n":"nonce-1","o":"004821","j":"token","k":"key"}""",
             QrPayloadCodec.canonicalJson(payload)
         )
     }
