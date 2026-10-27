@@ -507,6 +507,9 @@ This is the running summary for every issue and every pull request. It is append
 | #116 | 3. Backend Implementation | #121 | Merged 2026-10-28 | `npm run set:face` attaches a real reference photo to one account and re-reads it to confirm the write |
 | #117 | 4. Testing and Deployment | #122 | Merged 2026-10-28 | Agent guidance covers PowerShell binary capture and the magic-byte check, and the ledger records this batch |
 | #118 | 1. Mobile App Implementation | #119 | Merged 2026-10-28 | Six-digit fallback code travels inside the signed pass, printed under the QR and accepted by the guard on a denied verdict |
+| #124 | 1. Mobile App Implementation | #127 | Merged 2026-10-28 | Disable refresh button while pass countdown is active, re-enabling on expiry or error |
+| #125 | 3. Backend Implementation | #128 | Merged 2026-10-28 | Admin user registration page with individual forms and batch CSV import preview |
+| #126 | 3. Backend Implementation | #128 | Merged 2026-10-28 | POST /api/users and POST /api/users/batch endpoints for individual and bulk user creation |
 
 
 
