@@ -10,6 +10,9 @@ joblib==1.6.0
 deepface==0.0.102
 tensorflow==2.21.0
 keras==3.15.1
+# DeepFace calls tf_keras for its Keras 2 code path and aborts on TF 2.16+, where Keras 3 became the
+# default; without this shim `from deepface import DeepFace` raises before the app can bind a port.
+tf-keras==2.21.0
 pillow==12.3.0
 # Headless OpenCV keeps DeepFace importable on Linux images that ship without libGL.
 opencv-python-headless==5.0.0.93
