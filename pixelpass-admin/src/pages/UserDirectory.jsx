@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Search, Users, Upload, X, ShieldCheck, ShieldOff, Filter } from 'lucide-react';
+import { Search, Users, Upload, X, ShieldCheck, ShieldOff, Filter, UserPlus } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import api, { errorMessage } from '../api/client';
 
 const ROLE_OPTIONS = ['ADMIN', 'SECURITY', 'STAFF', 'STUDENT', 'VISITOR'];
@@ -124,9 +125,17 @@ export default function UserDirectory() {
               : `${users.length} account${users.length === 1 ? '' : 's'} shown · ${revokedCount} revoked`}
           </p>
         </div>
-        <div className="flex items-center gap-2 text-sm text-gray-500 bg-white px-4 py-2 rounded-lg border shadow-sm">
-          <Users className="w-4 h-4" />
-          {users.length} visible
+        <div className="flex items-center gap-3">
+          <Link
+            to="/users/register"
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 shadow-sm"
+          >
+            <UserPlus className="w-4 h-4" /> Add / Import Users
+          </Link>
+          <div className="flex items-center gap-2 text-sm text-gray-500 bg-white px-4 py-2 rounded-lg border shadow-sm">
+            <Users className="w-4 h-4" />
+            {users.length} visible
+          </div>
         </div>
       </header>
 

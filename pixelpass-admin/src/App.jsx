@@ -4,6 +4,7 @@ import ProtectedRoute from './routes/ProtectedRoute';
 import Dashboard from './pages/Dashboard';
 import Scans from './pages/Scans';
 import UserDirectory from './pages/UserDirectory';
+import UserRegistration from './pages/UserRegistration';
 import VisitorEngine from './pages/VisitorEngine';
 import VisitorEnrollment from './pages/VisitorEnrollment';
 import VisitorCapture from './pages/VisitorCapture';
@@ -27,6 +28,7 @@ function App() {
                         <Route index element={<Navigate to="/dashboard" replace />} />
                         <Route path="dashboard" element={<Dashboard />} />
                         <Route path="users" element={<UserDirectory />} />
+                        <Route path="users/register" element={<UserRegistration />} />
                         <Route path="scans" element={<Scans />} />
                         <Route path="visitors" element={<VisitorEngine />} />
                         <Route path="logs" element={<AuditLog />} />

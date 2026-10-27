@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
     LayoutDashboard,
     Users,
+    UserPlus,
     ScanLine,
     UserCheck,
     ScrollText,
@@ -13,6 +14,7 @@ import { clearSession, getAdminName } from '../auth/storage';
 const NAV_ITEMS = [
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/users', label: 'User Directory', icon: Users },
+    { to: '/users/register', label: 'Add / Import Users', icon: UserPlus },
     { to: '/scans', label: 'Scan Telemetry', icon: ScanLine },
     { to: '/visitors', label: 'Visitor Engine', icon: UserCheck },
     { to: '/logs', label: 'Audit Logs', icon: ScrollText }

@@ -1,9 +1,22 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const User = require('../models/User');
 const router = express.Router();
 
 const ROLE_CATEGORIES = ['ADMIN', 'SECURITY', 'STAFF', 'STUDENT', 'VISITOR'];
+
+const generateUserId = (roleCategory) => {
+    const prefix = {
+        ADMIN: 'ADM',
+        SECURITY: 'SEC',
+        STAFF: 'STF',
+        STUDENT: 'STD',
+        VISITOR: 'VIS'
+    }[roleCategory] || 'USR';
+    return `${prefix}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+};
 
 // Shared projection: the directory never needs the base64 faces, only whether one exists.
 const DIRECTORY_PROJECTION = {
@@ -31,6 +44,171 @@ const DIRECTORY_PROJECTION = {
 
 // Escapes user input before it reaches a RegExp so a stray "(" cannot break the query.
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// POST /api/users - Create an individual user
+router.post('/', async (req, res) => {
+    try {
+        const {
+            firstName,
+            lastName,
+            email,
+            phoneNumber,
+            roleCategory,
+            department,
+            password,
+            referenceFaceBase64
+        } = req.body || {};
+
+        if (!firstName || !lastName || !email || !roleCategory) {
+            return res.status(400).json({ error: "firstName, lastName, email, and roleCategory are required" });
+        }
+
+        const normalizedRole = String(roleCategory).toUpperCase();
+        if (!ROLE_CATEGORIES.includes(normalizedRole)) {
+            return res.status(400).json({ error: `roleCategory must be one of: ${ROLE_CATEGORIES.join(', ')}` });
+        }
+
+        const normalizedEmail = String(email).trim().toLowerCase();
+        const existingEmail = await User.findOne({ email: normalizedEmail });
+        if (existingEmail) {
+            return res.status(409).json({ error: "An account with this email already exists" });
+        }
+
+        if (phoneNumber) {
+            const normalizedPhone = String(phoneNumber).trim();
+            const existingPhone = await User.findOne({ phoneNumber: normalizedPhone });
+            if (existingPhone) {
+                return res.status(409).json({ error: "An account with this phone number already exists" });
+            }
+        }
+
+        const plainPassword = password && String(password).trim() ? String(password).trim() : crypto.randomBytes(8).toString('hex');
+        const hashedPassword = await bcrypt.hash(plainPassword, 10);
+        const userId = generateUserId(normalizedRole);
+
+        const newUser = await User.create({
+            userId,
+            firstName: String(firstName).trim(),
+            lastName: String(lastName).trim(),
+            email: normalizedEmail,
+            phoneNumber: phoneNumber ? String(phoneNumber).trim() : undefined,
+            roleCategory: normalizedRole,
+            department: department ? String(department).trim() : undefined,
+            password: hashedPassword,
+            referenceFaceBase64: referenceFaceBase64 || undefined,
+            isActive: true
+        });
+
+        res.status(201).json({
+            message: "User created successfully",
+            user: {
+                _id: newUser._id,
+                userId: newUser.userId,
+                firstName: newUser.firstName,
+                lastName: newUser.lastName,
+                email: newUser.email,
+                phoneNumber: newUser.phoneNumber,
+                roleCategory: newUser.roleCategory,
+                department: newUser.department,
+                isActive: newUser.isActive !== false,
+                hasFace: Boolean(newUser.referenceFaceBase64),
+                tempPassword: password ? undefined : plainPassword
+            }
+        });
+    } catch (error) {
+        console.error("Error creating user:", error);
+        res.status(500).json({ error: "Failed to create user account" });
+    }
+});
+
+// POST /api/users/batch - Bulk create user accounts from CSV import
+router.post('/batch', async (req, res) => {
+    try {
+        const { users } = req.body || {};
+
+        if (!Array.isArray(users) || users.length === 0) {
+            return res.status(400).json({ error: "users must be a non-empty array" });
+        }
+
+        const created = [];
+        const failed = [];
+
+        for (let i = 0; i < users.length; i++) {
+            const entry = users[i] || {};
+            const {
+                firstName,
+                lastName,
+                email,
+                phoneNumber,
+                roleCategory,
+                department,
+                password,
+                referenceFaceBase64
+            } = entry;
+
+            if (!firstName || !lastName || !email || !roleCategory) {
+                failed.push({ index: i, email: email || 'unknown', reason: "Missing required fields (firstName, lastName, email, roleCategory)" });
+                continue;
+            }
+
+            const normalizedRole = String(roleCategory).toUpperCase();
+            if (!ROLE_CATEGORIES.includes(normalizedRole)) {
+                failed.push({ index: i, email, reason: `Invalid roleCategory '${roleCategory}'` });
+                continue;
+            }
+
+            const normalizedEmail = String(email).trim().toLowerCase();
+            const existingEmail = await User.findOne({ email: normalizedEmail });
+            if (existingEmail) {
+                failed.push({ index: i, email: normalizedEmail, reason: "Duplicate email address" });
+                continue;
+            }
+
+            try {
+                const plainPassword = password && String(password).trim() ? String(password).trim() : crypto.randomBytes(8).toString('hex');
+                const hashedPassword = await bcrypt.hash(plainPassword, 10);
+                const userId = generateUserId(normalizedRole);
+
+                const newUser = await User.create({
+                    userId,
+                    firstName: String(firstName).trim(),
+                    lastName: String(lastName).trim(),
+                    email: normalizedEmail,
+                    phoneNumber: phoneNumber ? String(phoneNumber).trim() : undefined,
+                    roleCategory: normalizedRole,
+                    department: department ? String(department).trim() : undefined,
+                    password: hashedPassword,
+                    referenceFaceBase64: referenceFaceBase64 || undefined,
+                    isActive: true
+                });
+
+                created.push({
+                    _id: newUser._id,
+                    userId: newUser.userId,
+                    firstName: newUser.firstName,
+                    lastName: newUser.lastName,
+                    email: newUser.email,
+                    roleCategory: newUser.roleCategory,
+                    department: newUser.department,
+                    hasFace: Boolean(newUser.referenceFaceBase64)
+                });
+            } catch (err) {
+                failed.push({ index: i, email: normalizedEmail, reason: err.message || "Failed to create user record" });
+            }
+        }
+
+        res.status(200).json({
+            message: `Batch creation complete: ${created.length} created, ${failed.length} failed`,
+            createdCount: created.length,
+            failedCount: failed.length,
+            created,
+            failed
+        });
+    } catch (error) {
+        console.error("Error batch creating users:", error);
+        res.status(500).json({ error: "Failed to execute batch user creation" });
+    }
+});
 
 // GET /api/users - Fetch users for the Admin Directory
 // Query: ?search=&roleCategory=SECURITY&status=active|revoked
