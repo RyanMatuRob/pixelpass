@@ -6,6 +6,10 @@ import basicSsl from '@vitejs/plugin-basic-ssl'
 
 const projectRoot = fileURLToPath(new URL('.', import.meta.url))
 
+// Azure runs one App Service for the console and the API, so the production bundle is emitted
+// straight into the backend's static folder instead of a separate hosting surface.
+const backendPublicDir = fileURLToPath(new URL('../pixelpass-backend/public', import.meta.url))
+
 // The visitor portal is tested from a physical phone on the same network, so the dev server
 // listens on every interface, forwards /api to the backend, and can serve self-signed HTTPS.
 // Browsers only expose the camera (and Web Crypto) on a secure origin, which a plain http://
@@ -19,6 +23,11 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       ...(env.VITE_DEV_HTTPS === 'true' ? [basicSsl()] : []),
     ],
+    build: {
+      outDir: backendPublicDir,
+      // outDir sits outside the Vite root, so Vite refuses to clean it unless told to.
+      emptyOutDir: true,
+    },
     server: {
       host: true,
       port: 5173,

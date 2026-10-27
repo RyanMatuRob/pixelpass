@@ -1,0 +1,72 @@
+name: Deploy ML service to Azure
+
+# Runs when a release lands on main (the release PR is the only path to main) and on demand.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pixelpass-ml-service/**'
+      - '.github/workflows/deploy-ml.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-ml-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy FastAPI service
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Check service syntax
+        working-directory: pixelpass-ml-service
+        run: |
+          python -m py_compile main.py
+          python - <<'PY'
+          import pathlib
+          startup = pathlib.Path('startup.sh').read_bytes()
+          if b'\r\n' in startup:
+              raise SystemExit('startup.sh contains CRLF line endings; bash cannot run it on Linux.')
+          if b'uvicorn main:app' not in startup:
+              raise SystemExit('startup.sh does not launch uvicorn.')
+          PY
+
+      - name: Verify the model artifact ships
+        run: |
+          test -f pixelpass-ml-service/models/pixelpass_if_model.joblib
+          test -f pixelpass-ml-service/requirements.txt
+
+      - name: Check deployment configuration
+        env:
+          APP_NAME: ${{ vars.AZURE_ML_APP_NAME }}
+          PUBLISH_PROFILE: ${{ secrets.AZURE_ML_PUBLISH_PROFILE }}
+        run: |
+          if [ -z "${APP_NAME}" ]; then
+            echo "::error::Repository variable AZURE_ML_APP_NAME is not set."
+            exit 1
+          fi
+          if [ -z "${PUBLISH_PROFILE}" ]; then
+            echo "::error::Repository secret AZURE_ML_PUBLISH_PROFILE is not set."
+            exit 1
+          fi
+
+      # The publish profile path cannot set a startup command, so the Web App keeps
+      # "bash /home/site/wwwroot/startup.sh" as configured once in DEPLOYMENT.md.
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_ML_APP_NAME }}
+          publish-profile: ${{ secrets.AZURE_ML_PUBLISH_PROFILE }}
+          package: pixelpass-ml-service

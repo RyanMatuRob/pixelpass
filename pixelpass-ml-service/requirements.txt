@@ -1,0 +1,15 @@
+# Runtime dependencies for the PixelPass biometric and anomaly service.
+# Versions mirror the virtualenv the shipped Isolation Forest model was trained and verified in.
+fastapi==0.143.0
+uvicorn==0.54.0
+pydantic==2.14.0
+pandas==3.0.6
+numpy==2.5.3
+scikit-learn==1.6.1
+joblib==1.6.0
+deepface==0.0.102
+tensorflow==2.21.0
+keras==3.15.1
+pillow==12.3.0
+# Headless OpenCV keeps DeepFace importable on Linux images that ship without libGL.
+opencv-python-headless==5.0.0.93
