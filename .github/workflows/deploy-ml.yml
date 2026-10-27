@@ -74,6 +74,59 @@ jobs:
           done
           exit ${missing}
 
+      # OIDC: Azure trusts a token issued for this repository and environment, so the job never holds
+      # a publish profile. SCM basic authentication can stay disabled on the Web App.
+      - name: Sign in to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # Settings live in the repository so a fresh Web App, or a portal edit, cannot silently bring
+      # back the Oryx build: the package already carries its dependencies (`false`), and the
+      # TensorFlow import plus the Facenet warm-up needs more than the 230 s default to bind.
+      # A settings write restarts the site, and an upload that overlaps that restart is killed with
+      # "Deployment has been stopped due to SCM container restart", so values are only written when
+      # they drift, and the step then waits for SCM before anything is uploaded.
+      - name: Configure the Web App runtime
+        env:
+          APP_NAME: ${{ vars.AZURE_ML_APP_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: |
+          set -euo pipefail
+          names="name=='SCM_DO_BUILD_DURING_DEPLOYMENT' || name=='WEBSITES_PORT' || name=='PYTHONPATH' || name=='PYTHONUNBUFFERED' || name=='WEBSITES_CONTAINER_START_TIME_LIMIT'"
+          desired="$(printf '%s\n' \
+            SCM_DO_BUILD_DURING_DEPLOYMENT=false \
+            WEBSITES_PORT=8000 \
+            PYTHONPATH=/home/site/wwwroot/python-packages \
+            PYTHONUNBUFFERED=1 \
+            WEBSITES_CONTAINER_START_TIME_LIMIT=600 | sort)"
+          current="$(az webapp config appsettings list --name "${APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --query "[?${names}].{k:name,v:value}" -o tsv | tr '\t' '=' | sort)"
+
+          if [ "${current}" = "${desired}" ]; then
+            echo "App Service settings already match the repository."
+            exit 0
+          fi
+
+          echo "::notice::Applying App Service settings"
+          az webapp config set --name "${APP_NAME}" --resource-group "${RESOURCE_GROUP}" \
+            --startup-file "bash /home/site/wwwroot/startup.sh" \
+            --always-on true
+          az webapp config appsettings set --name "${APP_NAME}" --resource-group "${RESOURCE_GROUP}" \
+            --settings ${desired}
+
+          for attempt in $(seq 1 30); do
+            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+              "https://${APP_NAME}.scm.azurewebsites.net/" || true)"
+            echo "SCM readiness attempt ${attempt}: HTTP ${code}"
+            case "${code}" in 200|401|403) break ;; esac
+            sleep 10
+          done
+          sleep 30
+
       # The platform build is deliberately not used. Oryx compresses its output to
       # /home/site/wwwroot/output.tar.zst and the container never unpacks it, so the app booted with
       # no start-up script and exited 127 (issue #111). Dependencies are resolved here, on the runner,
@@ -100,34 +153,6 @@ jobs:
 
           ( cd "${stage}" && zip -qr "${RUNNER_TEMP}/ml-app.zip" . )
           ls -lh "${RUNNER_TEMP}/ml-app.zip"
-
-      # OIDC: Azure trusts a token issued for this repository and environment, so the job never holds
-      # a publish profile. SCM basic authentication can stay disabled on the Web App.
-      - name: Sign in to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      # Settings live in the repository so a fresh Web App, or a portal edit, cannot silently bring
-      # back the Oryx build. The package already carries its dependencies, hence the `false`; the
-      # TensorFlow import plus the Facenet warm-up needs more than the 230 s default to bind.
-      - name: Configure the Web App runtime
-        env:
-          APP_NAME: ${{ vars.AZURE_ML_APP_NAME }}
-          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
-        run: |
-          az webapp config set --name "${APP_NAME}" --resource-group "${RESOURCE_GROUP}" \
-            --startup-file "bash /home/site/wwwroot/startup.sh" \
-            --always-on true
-          az webapp config appsettings set --name "${APP_NAME}" --resource-group "${RESOURCE_GROUP}" \
-            --settings \
-              SCM_DO_BUILD_DURING_DEPLOYMENT=false \
-              WEBSITES_PORT=8000 \
-              PYTHONPATH=/home/site/wwwroot/python-packages \
-              PYTHONUNBUFFERED=1 \
-              WEBSITES_CONTAINER_START_TIME_LIMIT=600
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
