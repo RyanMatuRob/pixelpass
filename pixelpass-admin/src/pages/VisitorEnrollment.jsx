@@ -30,7 +30,9 @@ export default function VisitorEnrollment() {
     setError(null);
 
     try {
-      const response = await fetch(`http://localhost:3000/api/visitors/enroll/${token}`, {
+      // Relative on purpose: the Vite dev server proxies /api to the backend, and the production
+      // console is served by the backend itself, so the visitor portal must never pin an origin.
+      const response = await fetch(`/api/visitors/enroll/${token}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ referenceFaceBase64: previewImage })

@@ -1,8 +1,10 @@
 import axios from 'axios';
 import { clearSession, getToken } from '../auth/storage';
 
-// Override with VITE_API_BASE_URL when the API is not on localhost.
-const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+// Override with VITE_API_BASE_URL when the API is not on localhost. A production build is served
+// by the backend itself, so requests stay same-origin; only the dev server needs an absolute URL.
+const baseURL = import.meta.env.VITE_API_BASE_URL
+    || (import.meta.env.DEV ? 'http://localhost:3000' : '');
 
 const api = axios.create({
     baseURL,
