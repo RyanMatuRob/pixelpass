@@ -329,16 +329,22 @@ fun QrGeneratorScreen(
             }
 
             // The pass is minted on demand so the code never changes while the
-            // holder is walking to the gate. It stays pinned under the scrolling
-            // card so it cannot fall off a short screen.
+            // holder is walking to the gate. It stays disabled while an active
+            // pass is live to prevent premature pass regeneration and credential reuse.
+            val isButtonEnabled = !isSigning && (issuedPass == null || isExpired || signingFailure != null)
+
             Button(
                 onClick = { generateTicket++ },
-                enabled = !isSigning,
+                enabled = isButtonEnabled,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 16.dp)
                     .height(56.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PrimaryBlue,
+                    disabledContainerColor = Color(0xFF9CA3AF),
+                    disabledContentColor = SurfaceWhite
+                ),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 if (isSigning) {
@@ -359,6 +365,7 @@ fun QrGeneratorScreen(
                     text = when {
                         isSigning -> "Generating..."
                         issuedPass == null -> "Generate Pass"
+                        isLive -> String.format(Locale.ROOT, "Pass Active (%02d:%02d)", secondsLeft / 60, secondsLeft % 60)
                         else -> "Generate New Pass"
                     },
                     style = AppTypography.bodyLarge.copy(color = SurfaceWhite)
