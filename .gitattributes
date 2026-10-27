@@ -1,0 +1,2 @@
+# Azure App Service executes the ML startup script on Linux, where a CRLF line ending breaks bash.
+*.sh text eol=lf
