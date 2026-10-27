@@ -26,6 +26,17 @@ Resource group that holds the two Web Apps. The role assignment is scoped to it.
 .PARAMETER AppName
 Display name of the Entra ID application. One application serves both workflows.
 
+.PARAMETER IdentityName
+Name of the user-assigned managed identity used when an application cannot be registered.
+
+.PARAMETER IdentityType
+Auto (default) tries an Entra ID application and falls back to a managed identity when the account may
+not register one. AppRegistration and ManagedIdentity force one flavour.
+
+.PARAMETER IdentityLocation
+Region for the managed identity. Defaults to the resource group's region, because subscriptions often
+restrict managed identities to an allowed set of regions.
+
 .PARAMETER Repo
 GitHub repository in owner/name form. Part of the OIDC subject claim.
 
@@ -38,6 +49,10 @@ GitHub environment declared by both deploy jobs.
 .PARAMETER SubscriptionId
 Subscription to grant the role in. Defaults to the subscription az is currently pointing at.
 
+.PARAMETER TenantId
+Tenant that owns the application. Defaults to the tenant az is currently pointing at, and only needs
+to be passed when the az context cannot be read.
+
 .PARAMETER DryRun
 Prints what would be created and exits without calling Azure or GitHub.
 
@@ -48,16 +63,25 @@ az login
 
 .EXAMPLE
 .\scripts\setup-azure-oidc.ps1 -ResourceGroup pixelpass-rg -SubscriptionId 00000000-0000-0000-0000-000000000000
+
+.EXAMPLE
+# When az cannot be found or its context is unusable, pass both ids instead.
+.\scripts\setup-azure-oidc.ps1 -SubscriptionId 00000000-0000-0000-0000-000000000000 -TenantId 11111111-1111-1111-1111-111111111111
 #>
 
 [CmdletBinding()]
 param(
     [string]$ResourceGroup = 'pixelpass-rg',
     [string]$AppName = 'pixelpass-github-deploy',
+    [string]$IdentityName = 'pixelpass-github-deploy',
+    [ValidateSet('Auto', 'AppRegistration', 'ManagedIdentity')]
+    [string]$IdentityType = 'Auto',
+    [string]$IdentityLocation,
     [string]$Repo = 'RyanMatuRob/pixelpass',
     [string]$Branch = 'main',
     [string]$Environment = 'production',
     [string]$SubscriptionId,
+    [string]$TenantId,
     [switch]$DryRun
 )
 
@@ -128,6 +152,49 @@ function Test-Cli {
     return $ok
 }
 
+# az is not always on PATH, for example when the CLI was installed for another user profile or the
+# shell was opened before the installer refreshed PATH. PATH is preferred; the standard install
+# locations are the fallback.
+function Resolve-AzCommand {
+    $onPath = Get-Command az -ErrorAction SilentlyContinue
+    if ($onPath) { return 'az' }
+
+    $roots = @(
+        [Environment]::GetEnvironmentVariable('ProgramFiles'),
+        [Environment]::GetEnvironmentVariable('ProgramFiles(x86)'),
+        [Environment]::GetEnvironmentVariable('LOCALAPPDATA')
+    )
+    $suffixes = @(
+        'Microsoft SDKs\Azure\CLI2\wbin\az.cmd',
+        'Programs\Azure CLI\wbin\az.cmd'
+    )
+    foreach ($root in $roots) {
+        if (-not $root) { continue }
+        foreach ($suffix in $suffixes) {
+            $candidate = Join-Path $root $suffix
+            if (Test-Path -LiteralPath $candidate) { return $candidate }
+        }
+    }
+    return $null
+}
+
+# A multi-value --query is printed one value per line, and CLI warnings can be mixed into the same
+# stream, so the first well-formed GUID is kept instead of splitting on a separator.
+function Read-AzGuid {
+    param(
+        [Parameter(Mandatory = $true)][string]$Query,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+    $raw = [string](Invoke-CliValue -Command 'az' -Arguments @('account', 'show', '--query', $Query,
+        '--output', 'tsv'))
+    $match = [regex]::Match($raw, '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}')
+    if (-not $match.Success) {
+        throw ("Could not read the $Label from az. Run az login again, or pass -SubscriptionId and " +
+            '-TenantId explicitly.')
+    }
+    return $match.Value
+}
+
 # ---------------------------------------------------------------------------------------------
 # Dry run
 # ---------------------------------------------------------------------------------------------
@@ -138,10 +205,21 @@ if (-not $Branch -or -not $Repo -or -not $Environment) {
 if ($DryRun) {
     Write-Step 'Dry run'
     Write-Note 'Nothing is created, granted, or written to GitHub.'
-    Write-Note "Would create or reuse the Entra ID application '$AppName' and its service principal."
+    if ($IdentityType -eq 'AppRegistration') {
+        Write-Note "Would create or reuse the Entra ID application '$AppName' and its service principal."
+    }
+    elseif ($IdentityType -eq 'ManagedIdentity') {
+        Write-Note "Would create or reuse the managed identity '$IdentityName' in $ResourceGroup."
+    }
+    else {
+        Write-Note "Would create or reuse the Entra ID application '$AppName', or the managed identity"
+        Write-Note "'$IdentityName' when this account may not register applications."
+    }
     Write-Note 'Would add these federated credentials:'
     Write-Note "  github-branch-$Branch            -> repo:${Repo}:ref:refs/heads/${Branch}"
     Write-Note "  github-environment-$Environment -> repo:${Repo}:environment:${Environment}"
+    Write-Note 'Would also add the -immutable variants when GitHub issues id-qualified subjects,'
+    Write-Note 'which is decided at run time from the repository id.'
     Write-Note "Would grant Contributor on /subscriptions/<subscription-id>/resourceGroups/$ResourceGroup."
     Write-Note 'Would set repository variables AZURE_CLIENT_ID, AZURE_TENANT_ID,'
     Write-Note 'AZURE_SUBSCRIPTION_ID and AZURE_RESOURCE_GROUP.'
@@ -155,26 +233,29 @@ if ($DryRun) {
 Write-Step 'Preflight'
 
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
-    throw ('Azure CLI not found. Install it with: winget install --exact --id Microsoft.AzureCLI' +
-        ', open a new terminal, then run az login.')
+    $resolvedAz = Resolve-AzCommand
+    if (-not $resolvedAz) {
+        throw ('Azure CLI not found. Install it with: winget install --exact --id Microsoft.AzureCLI' +
+            ', open a new terminal, then run az login.')
+    }
+    # An alias makes every 'az' invocation below resolve to the installed executable.
+    Set-Alias -Name az -Value $resolvedAz -Scope Script -Force
+    Write-Note "Azure CLI      : $resolvedAz (not on PATH)"
 }
 if (-not (Test-Cli -Command 'az' -Arguments @('account', 'show'))) {
     throw 'Not signed in to Azure. Run az login in this terminal first.'
 }
 
-# One call returns both ids, tab separated, so the tenant survives a subscription switch.
-$context = Invoke-CliValue -Command 'az' -Arguments @('account', 'show', '--query', '[id,tenantId]', '--output', 'tsv')
-$contextParts = @($context -split "`t")
-if ($contextParts.Count -lt 2) {
-    throw 'Could not read the current subscription and tenant. Run az login again.'
-}
-$currentSubscriptionId = $contextParts[0]
-$tenantId = $contextParts[1]
-if (-not $SubscriptionId) { $SubscriptionId = $currentSubscriptionId }
+# Both ids are read separately: a multi-value --query prints one value per line, which a single
+# combined read cannot be split reliably. Passing them explicitly skips the reads entirely.
+if (-not $SubscriptionId) { $SubscriptionId = Read-AzGuid -Query 'id' -Label 'subscription id' }
+if (-not $TenantId) { $TenantId = Read-AzGuid -Query 'tenantId' -Label 'tenant id' }
 $scope = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroup"
 
 if (Test-Cli -Command 'az' -Arguments @('group', 'show', '--name', $ResourceGroup)) {
-    Write-Note "Resource group : $ResourceGroup"
+    $Location = Invoke-CliValue -Command 'az' -Arguments @('group', 'show', '--name', $ResourceGroup,
+        '--query', 'location', '--output', 'tsv')
+    Write-Note "Resource group : $ResourceGroup ($Location)"
 }
 else {
     throw "Resource group $ResourceGroup does not exist. Run scripts/provision-azure.ps1 first."
@@ -191,37 +272,90 @@ if (-not (Test-Cli -Command 'gh' -Arguments @('auth', 'status'))) {
 }
 Write-Note "Repository     : $Repo ($Branch, environment $Environment)"
 
-# ---------------------------------------------------------------------------------------------
-# 1. Entra ID application and service principal
-# ---------------------------------------------------------------------------------------------
-Write-Step "Entra ID application $AppName"
+# GitHub can issue immutable subject claims that carry the numeric owner and repository ids, for
+# example repo:Owner@168424652/Repository@1393706386:environment:production. Registering both
+# spellings keeps login working whichever form the token uses.
+$immutableRepo = $null
+$ownerId = Invoke-CliValue -Command 'gh' -Arguments @('api', "repos/$Repo", '--jq', '.owner.id')
+$repoId = Invoke-CliValue -Command 'gh' -Arguments @('api', "repos/$Repo", '--jq', '.id')
+$nameParts = @($Repo -split '/')
+if ($ownerId -and $repoId -and $nameParts.Count -eq 2) {
+    $immutableRepo = "$($nameParts[0])@$ownerId/$($nameParts[1])@$repoId"
+}
 
-$appId = Invoke-CliValue -Command 'az' -Arguments @('ad', 'app', 'list', '--display-name', $AppName,
-    '--query', '[0].appId', '--output', 'tsv')
-if ($appId -notmatch '^[0-9a-fA-F-]{36}$') {
-    $appId = Invoke-CliValue -Command 'az' -Arguments @('ad', 'app', 'create', '--display-name', $AppName,
-        '--query', 'appId', '--output', 'tsv')
-    if ($appId -notmatch '^[0-9a-fA-F-]{36}$') {
+# ---------------------------------------------------------------------------------------------
+# 1. Deploy identity
+# ---------------------------------------------------------------------------------------------
+# A managed identity is preferred where an application may not be registered: it is created through
+# Azure Resource Manager, needs no directory rights, and azure/login accepts its client id with the
+# same federated credentials. Student and locked-down tenants routinely withhold app registration.
+$issuer = 'https://token.actions.githubusercontent.com'
+$identity = $null
+
+if ($IdentityType -ne 'ManagedIdentity') {
+    Write-Step "Entra ID application $AppName"
+    $candidateAppId = Invoke-CliValue -Command 'az' -Arguments @('ad', 'app', 'list',
+        '--display-name', $AppName, '--query', '[0].appId', '--output', 'tsv')
+    if ($candidateAppId -notmatch '^[0-9a-fA-F-]{36}$') {
+        $candidateAppId = Invoke-CliValue -Command 'az' -Arguments @('ad', 'app', 'create',
+            '--display-name', $AppName, '--query', 'appId', '--output', 'tsv')
+    }
+    $candidateSpId = $null
+    if ($candidateAppId -match '^[0-9a-fA-F-]{36}$') {
+        $candidateSpId = Invoke-CliValue -Command 'az' -Arguments @('ad', 'sp', 'list',
+            '--filter', "appId eq '$candidateAppId'", '--query', '[0].id', '--output', 'tsv')
+        if ($candidateSpId -notmatch '^[0-9a-fA-F-]{36}$') {
+            $candidateSpId = Invoke-CliValue -Command 'az' -Arguments @('ad', 'sp', 'create',
+                '--id', $candidateAppId, '--query', 'id', '--output', 'tsv')
+        }
+    }
+    if ($candidateSpId -match '^[0-9a-fA-F-]{36}$') {
+        $identity = [pscustomobject]@{
+            Kind        = 'AppRegistration'
+            ClientId    = $candidateAppId
+            PrincipalId = $candidateSpId
+        }
+        Write-Note "Application (client) ID : $($identity.ClientId)"
+        Write-Note "Service principal ID    : $($identity.PrincipalId)"
+    }
+    elseif ($IdentityType -eq 'AppRegistration') {
         throw "Could not create the Entra ID application $AppName."
     }
-    Write-Note "Created application $appId."
-}
-else {
-    Write-Note "Reusing application $appId."
+    else {
+        Write-Note 'This account may not register applications (directory permission is withheld).'
+        Write-Note 'Falling back to a managed identity; ask a tenant administrator for the'
+        Write-Note 'Application Developer role if an application is preferred.'
+    }
 }
 
-$spId = Invoke-CliValue -Command 'az' -Arguments @('ad', 'sp', 'list', '--filter', "appId eq '$appId'",
-    '--query', '[0].id', '--output', 'tsv')
-if ($spId -notmatch '^[0-9a-fA-F-]{36}$') {
-    $spId = Invoke-CliValue -Command 'az' -Arguments @('ad', 'sp', 'create', '--id', $appId,
-        '--query', 'id', '--output', 'tsv')
-    if ($spId -notmatch '^[0-9a-fA-F-]{36}$') {
-        throw "Could not create the service principal for $appId."
+if (-not $identity) {
+    Write-Step "Managed identity $IdentityName"
+    $identityRegion = $Location
+    if ($IdentityLocation) { $identityRegion = $IdentityLocation }
+    $payload = Invoke-CliValue -Command 'az' -Arguments @('identity', 'show', '--name', $IdentityName,
+        '--resource-group', $ResourceGroup,
+        '--query', '{clientId:clientId,principalId:principalId}', '--output', 'json')
+    $verb = 'Reusing'
+    if (-not $payload) {
+        # Managed identities are refused outside the subscription's allowed regions, so the resource
+        # group's own region is the only safe default.
+        $payload = Invoke-CliValue -Command 'az' -Arguments @('identity', 'create', '--name', $IdentityName,
+            '--resource-group', $ResourceGroup, '--location', $identityRegion,
+            '--query', '{clientId:clientId,principalId:principalId}', '--output', 'json')
+        $verb = 'Created'
     }
-    Write-Note "Created service principal $spId."
-}
-else {
-    Write-Note "Reusing service principal $spId."
+    $parsed = $null
+    if ($payload) { $parsed = $payload | ConvertFrom-Json }
+    if (-not $parsed -or -not $parsed.clientId) {
+        throw "Could not create the managed identity $IdentityName in $ResourceGroup."
+    }
+    $identity = [pscustomobject]@{
+        Kind        = 'ManagedIdentity'
+        ClientId    = $parsed.clientId
+        PrincipalId = $parsed.principalId
+    }
+    Write-Note "$verb managed identity (client) ID : $($identity.ClientId)"
+    Write-Note "Principal ID                       : $($identity.PrincipalId)"
 }
 
 # ---------------------------------------------------------------------------------------------
@@ -234,8 +368,19 @@ $subjects = [ordered]@{
     "github-branch-$Branch"           = "repo:${Repo}:ref:refs/heads/${Branch}"
     "github-environment-$Environment" = "repo:${Repo}:environment:${Environment}"
 }
-$existing = Invoke-CliValue -Command 'az' -Arguments @('ad', 'app', 'federated-credential', 'list',
-    '--id', $appId, '--query', '[].name', '--output', 'tsv')
+if ($immutableRepo) {
+    $subjects["github-branch-$Branch-immutable"] = "repo:${immutableRepo}:ref:refs/heads/${Branch}"
+    $subjects["github-environment-$Environment-immutable"] = "repo:${immutableRepo}:environment:${Environment}"
+}
+if ($identity.Kind -eq 'ManagedIdentity') {
+    $existing = Invoke-CliValue -Command 'az' -Arguments @('identity', 'federated-credential', 'list',
+        '--identity-name', $IdentityName, '--resource-group', $ResourceGroup,
+        '--query', '[].name', '--output', 'tsv')
+}
+else {
+    $existing = Invoke-CliValue -Command 'az' -Arguments @('ad', 'app', 'federated-credential', 'list',
+        '--id', $identity.ClientId, '--query', '[].name', '--output', 'tsv')
+}
 $existingNames = @()
 if ($existing) { $existingNames = @($existing -split "`r?`n") }
 
@@ -244,15 +389,23 @@ foreach ($name in $subjects.Keys) {
         Write-Note "$name already exists."
         continue
     }
-    # -Compress keeps the JSON on one line, so it survives as a single argv entry.
-    $parameters = [ordered]@{
-        name      = $name
-        issuer    = 'https://token.actions.githubusercontent.com'
-        subject   = $subjects[$name]
-        audiences = @('api://AzureADTokenExchange')
-    } | ConvertTo-Json -Depth 5 -Compress
-    Invoke-Az @('ad', 'app', 'federated-credential', 'create', '--id', $appId,
-        '--parameters', $parameters, '--output', 'none')
+    if ($identity.Kind -eq 'ManagedIdentity') {
+        Invoke-Az @('identity', 'federated-credential', 'create', '--name', $name,
+            '--identity-name', $IdentityName, '--resource-group', $ResourceGroup,
+            '--issuer', $issuer, '--subject', $subjects[$name],
+            '--audiences', 'api://AzureADTokenExchange', '--output', 'none')
+    }
+    else {
+        # -Compress keeps the JSON on one line, so it survives as a single argv entry.
+        $parameters = [ordered]@{
+            name      = $name
+            issuer    = $issuer
+            subject   = $subjects[$name]
+            audiences = @('api://AzureADTokenExchange')
+        } | ConvertTo-Json -Depth 5 -Compress
+        Invoke-Az @('ad', 'app', 'federated-credential', 'create', '--id', $identity.ClientId,
+            '--parameters', $parameters, '--output', 'none')
+    }
     Write-Note "Added $name -> $($subjects[$name])."
 }
 
@@ -261,14 +414,21 @@ foreach ($name in $subjects.Keys) {
 # ---------------------------------------------------------------------------------------------
 Write-Step "Contributor on $ResourceGroup"
 
-$assignments = Invoke-CliValue -Command 'az' -Arguments @('role', 'assignment', 'list',
-    '--assignee-object-id', $spId, '--scope', $scope, '--role', 'Contributor',
-    '--query', 'length(@)', '--output', 'tsv')
-if ($assignments -eq '0' -or -not $assignments) {
+# JSON is counted here rather than with --query 'length(@)': the parentheses do not survive the
+# az.cmd shim, which made the check fail and re-grant on every run.
+$assignmentJson = Invoke-CliValue -Command 'az' -Arguments @('role', 'assignment', 'list',
+    '--assignee-object-id', $identity.PrincipalId, '--scope', $scope, '--role', 'Contributor',
+    '--output', 'json')
+$assignmentCount = 0
+if ($assignmentJson) {
+    $assignmentCount = @($assignmentJson | ConvertFrom-Json |
+            Where-Object { $_ -and $_.roleDefinitionName }).Count
+}
+if ($assignmentCount -eq 0) {
     # Contributor on the resource group is enough for webapps-deploy, and avoids a subscription
     # wide grant. ActiveDirectoryServicePrincipal skips the graph lookup that intermittent
     # tenants fail on.
-    Invoke-Az @('role', 'assignment', 'create', '--assignee-object-id', $spId,
+    Invoke-Az @('role', 'assignment', 'create', '--assignee-object-id', $identity.PrincipalId,
         '--assignee-principal-type', 'ServicePrincipal', '--role', 'Contributor',
         '--scope', $scope, '--output', 'none')
     Write-Note "Granted Contributor on $scope."
@@ -285,8 +445,8 @@ Write-Step "Repository variables for $Repo"
 Push-Location $repoRoot
 try {
     $variables = [ordered]@{
-        AZURE_CLIENT_ID       = $appId
-        AZURE_TENANT_ID       = $tenantId
+        AZURE_CLIENT_ID       = $identity.ClientId
+        AZURE_TENANT_ID       = $TenantId
         AZURE_SUBSCRIPTION_ID = $SubscriptionId
         AZURE_RESOURCE_GROUP  = $ResourceGroup
     }
@@ -303,8 +463,8 @@ finally {
 # Summary
 # ---------------------------------------------------------------------------------------------
 Write-Step 'Summary'
-Write-Note "Application (client) ID : $appId"
-Write-Note "Tenant ID               : $tenantId"
+Write-Note "Identity               : $($identity.Kind) (client) $($identity.ClientId)"
+Write-Note "Tenant ID               : $TenantId"
 Write-Note "Subscription ID         : $SubscriptionId"
 Write-Note "Resource group          : $ResourceGroup"
 Write-Note 'The four AZURE_* variables are set, so both deploy workflows can sign in now.'
