@@ -281,6 +281,17 @@ export default function UserRegistration() {
                   className="w-full rounded-lg border border-gray-200 p-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 />
               </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase text-gray-600 mb-1">Password (Optional)</label>
+                <input
+                  type="password"
+                  value={singleForm.password}
+                  onChange={(e) => setSingleForm({ ...singleForm, password: e.target.value })}
+                  placeholder="password123 (default if left blank)"
+                  className="w-full rounded-lg border border-gray-200 p-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
+              </div>
             </div>
 
             <div>
