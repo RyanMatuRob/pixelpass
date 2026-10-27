@@ -74,6 +74,33 @@ jobs:
           done
           exit ${missing}
 
+      # The platform build is deliberately not used. Oryx compresses its output to
+      # /home/site/wwwroot/output.tar.zst and the container never unpacks it, so the app booted with
+      # no start-up script and exited 127 (issue #111). Dependencies are resolved here, on the runner,
+      # and ship inside the zip next to the source.
+      - name: Build the deployment package
+        working-directory: pixelpass-ml-service
+        run: |
+          set -euo pipefail
+          stage="${RUNNER_TEMP}/ml-app"
+          rm -rf "${stage}"
+          mkdir -p "${stage}"
+          cp -r main.py startup.sh requirements.txt models "${stage}/"
+
+          python -m pip install --upgrade pip
+          python -m pip install \
+            --target "${stage}/python-packages" \
+            --no-compile \
+            --disable-pip-version-check \
+            --requirement requirements.txt
+
+          # Byte-code caches are machine specific and only inflate the upload.
+          find "${stage}/python-packages" -name '__pycache__' -type d -prune -exec rm -rf {} +
+          du -sh "${stage}/python-packages"
+
+          ( cd "${stage}" && zip -qr "${RUNNER_TEMP}/ml-app.zip" . )
+          ls -lh "${RUNNER_TEMP}/ml-app.zip"
+
       # OIDC: Azure trusts a token issued for this repository and environment, so the job never holds
       # a publish profile. SCM basic authentication can stay disabled on the Web App.
       - name: Sign in to Azure
@@ -83,11 +110,50 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      # A deployment does not carry settings, so the Web App keeps
-      # "bash /home/site/wwwroot/startup.sh" as configured once in DEPLOYMENT.md.
+      # Settings live in the repository so a fresh Web App, or a portal edit, cannot silently bring
+      # back the Oryx build. The package already carries its dependencies, hence the `false`; the
+      # TensorFlow import plus the Facenet warm-up needs more than the 230 s default to bind.
+      - name: Configure the Web App runtime
+        env:
+          APP_NAME: ${{ vars.AZURE_ML_APP_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: |
+          az webapp config set --name "${APP_NAME}" --resource-group "${RESOURCE_GROUP}" \
+            --startup-file "bash /home/site/wwwroot/startup.sh" \
+            --always-on true
+          az webapp config appsettings set --name "${APP_NAME}" --resource-group "${RESOURCE_GROUP}" \
+            --settings \
+              SCM_DO_BUILD_DURING_DEPLOYMENT=false \
+              WEBSITES_PORT=8000 \
+              PYTHONPATH=/home/site/wwwroot/python-packages \
+              PYTHONUNBUFFERED=1 \
+              WEBSITES_CONTAINER_START_TIME_LIMIT=600
+
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ vars.AZURE_ML_APP_NAME }}
           resource-group-name: ${{ vars.AZURE_RESOURCE_GROUP }}
-          package: pixelpass-ml-service
+          package: ${{ runner.temp }}/ml-app.zip
+
+      # A green upload only proves the zip arrived. This proves FastAPI is serving, and it allows for
+      # the Facenet warm-up that runs inside the lifespan hook.
+      - name: Wait for the service to answer
+        env:
+          APP_NAME: ${{ vars.AZURE_ML_APP_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: |
+          set -euo pipefail
+          host="$(az webapp show --name "${APP_NAME}" --resource-group "${RESOURCE_GROUP}" \
+            --query defaultHostName -o tsv)"
+          echo "Probing https://${host}/docs"
+          for attempt in $(seq 1 45); do
+            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://${host}/docs" || true)"
+            echo "attempt ${attempt}: HTTP ${code}"
+            if [ "${code}" = "200" ]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::https://${host}/docs never returned 200; inspect the container log with 'az webapp log tail'."
+          exit 1
