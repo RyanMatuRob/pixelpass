@@ -6,6 +6,7 @@ const User = require('../models/User');
 const router = express.Router();
 
 const ROLE_CATEGORIES = ['ADMIN', 'SECURITY', 'STAFF', 'STUDENT', 'VISITOR'];
+const DEFAULT_TEMP_PASSWORD = 'password123';
 
 const generateUserId = (roleCategory) => {
     const prefix = {
@@ -82,7 +83,7 @@ router.post('/', async (req, res) => {
             }
         }
 
-        const plainPassword = password && String(password).trim() ? String(password).trim() : crypto.randomBytes(8).toString('hex');
+        const plainPassword = password && String(password).trim() ? String(password).trim() : DEFAULT_TEMP_PASSWORD;
         const hashedPassword = await bcrypt.hash(plainPassword, 10);
         const userId = generateUserId(normalizedRole);
 
@@ -165,7 +166,7 @@ router.post('/batch', async (req, res) => {
             }
 
             try {
-                const plainPassword = password && String(password).trim() ? String(password).trim() : crypto.randomBytes(8).toString('hex');
+                const plainPassword = password && String(password).trim() ? String(password).trim() : DEFAULT_TEMP_PASSWORD;
                 const hashedPassword = await bcrypt.hash(plainPassword, 10);
                 const userId = generateUserId(normalizedRole);
 
