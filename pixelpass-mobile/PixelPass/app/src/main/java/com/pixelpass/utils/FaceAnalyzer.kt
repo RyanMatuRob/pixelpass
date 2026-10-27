@@ -11,8 +11,10 @@ import android.util.Base64
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.face.Face
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
+import com.pixelpass.core.PixelPassLog
 import java.io.ByteArrayOutputStream
 
 enum class FaceDetectionStatus {
@@ -22,9 +24,20 @@ enum class FaceDetectionStatus {
     ALIGNED
 }
 
+/**
+ * Watches the camera and reports whether one face is sitting inside the capture oval.
+ *
+ * Nothing is captured on its own any more: the guard decides when the frame is taken.
+ * [FaceDetectionStatus.ALIGNED] means the face is in the oval right now, and
+ * [onReadyChanged] flips to `true` only once that has held for [READY_FRAMES] frames,
+ * which is what enables the capture button.
+ */
 class FaceAnalyzer(
     private val onStatusUpdate: (FaceDetectionStatus) -> Unit,
-    private val onFaceExtracted: (String) -> Unit
+    private val onFaceExtracted: (String) -> Unit,
+    private val onReadyChanged: (Boolean) -> Unit = {},
+    private val onCaptureMissed: () -> Unit = {},
+    private val mirrorHorizontally: Boolean = false
 ) : ImageAnalysis.Analyzer {
 
     private val options = FaceDetectorOptions.Builder()
@@ -32,93 +45,145 @@ class FaceAnalyzer(
         .build()
 
     private val detector = FaceDetection.getClient(options)
-    private var isAnalyzing = true
     private var consecutiveAlignedFrames = 0
+    private var lastStatus: FaceDetectionStatus? = null
+
+    // Read from the UI thread (`requestCapture`) and written from the analysis callbacks.
+    @Volatile
+    private var isReady = false
+
+    @Volatile
+    private var captureRequested = false
+
+    private var captureDeadlineNanos = 0L
+
+    /**
+     * Asks for the next aligned frame to be cropped and handed to [onFaceExtracted].
+     *
+     * Returns `false` when no face was ready at the moment of the tap, so the caller can
+     * tell the guard instead of silently capturing nothing.
+     */
+    fun requestCapture(): Boolean {
+        if (!isReady) return false
+        captureRequested = true
+        captureDeadlineNanos = System.nanoTime() + CAPTURE_WINDOW_NANOS
+        return true
+    }
 
     @SuppressLint("UnsafeOptInUsageError")
     override fun analyze(imageProxy: ImageProxy) {
         val mediaImage = imageProxy.image
-        if (mediaImage != null && isAnalyzing) {
-            val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-
-            detector.process(image)
-                .addOnSuccessListener { faces ->
-                    if (!isAnalyzing) return@addOnSuccessListener
-
-                    if (faces.size == 1) {
-                        val face = faces.first()
-                        val boundingBox = face.boundingBox
-
-                        val frameWidth = imageProxy.width
-                        val frameHeight = imageProxy.height
-
-                        val faceWidth = boundingBox.width()
-                        val centerX = boundingBox.centerX()
-                        val centerY = boundingBox.centerY()
-
-                        // Minimum face width requirement relative to frame
-                        val minWidth = (frameWidth * 0.25f).toInt()
-
-                        // Check if face is centered in the frame
-                        val isCenteredX = centerX in (frameWidth * 0.25f).toInt()..(frameWidth * 0.75f).toInt()
-                        val isCenteredY = centerY in (frameHeight * 0.20f).toInt()..(frameHeight * 0.80f).toInt()
-
-                        if (faceWidth < minWidth) {
-                            onStatusUpdate(FaceDetectionStatus.TOO_FAR)
-                            consecutiveAlignedFrames = 0
-                        } else if (!isCenteredX || !isCenteredY) {
-                            onStatusUpdate(FaceDetectionStatus.OFF_CENTER)
-                            consecutiveAlignedFrames = 0
-                        } else {
-                            consecutiveAlignedFrames++
-                            onStatusUpdate(FaceDetectionStatus.ALIGNED)
-
-                            // Require 3 consecutive stable frames within bounds before capturing
-                            if (consecutiveAlignedFrames >= 3) {
-                                isAnalyzing = false // Lock scanner
-                                val bitmap = imageProxyToBitmap(imageProxy)
-
-                                if (bitmap != null) {
-                                    val marginX = (boundingBox.width() * 0.1).toInt()
-                                    val marginY = (boundingBox.height() * 0.1).toInt()
-
-                                    val safeRect = Rect(
-                                        maxOf(0, boundingBox.left - marginX),
-                                        maxOf(0, boundingBox.top - marginY),
-                                        minOf(bitmap.width, boundingBox.right + marginX),
-                                        minOf(bitmap.height, boundingBox.bottom + marginY)
-                                    )
-
-                                    val croppedFace = Bitmap.createBitmap(
-                                        bitmap,
-                                        safeRect.left,
-                                        safeRect.top,
-                                        safeRect.width(),
-                                        safeRect.height()
-                                    )
-
-                                    val base64String = bitmapToBase64(croppedFace)
-                                    onFaceExtracted(base64String)
-                                } else {
-                                    isAnalyzing = true
-                                    consecutiveAlignedFrames = 0
-                                }
-                            }
-                        }
-                    } else {
-                        onStatusUpdate(FaceDetectionStatus.NO_FACE)
-                        consecutiveAlignedFrames = 0
-                    }
-                }
-                .addOnCompleteListener { imageProxy.close() }
-        } else {
+        if (mediaImage == null) {
             imageProxy.close()
+            return
         }
+
+        val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+
+        detector.process(image)
+            .addOnSuccessListener { faces ->
+                if (faces.size == 1) {
+                    evaluate(faces.first(), imageProxy)
+                } else {
+                    consecutiveAlignedFrames = 0
+                    publishStatus(FaceDetectionStatus.NO_FACE)
+                    publishReady(false)
+                }
+            }
+            .addOnCompleteListener { imageProxy.close() }
+    }
+
+    private fun evaluate(face: Face, imageProxy: ImageProxy) {
+        val box = face.boundingBox.toFaceBox()
+        val frame = FaceGeometry.uprightFrameSize(
+            bufferWidth = imageProxy.width,
+            bufferHeight = imageProxy.height,
+            rotationDegrees = imageProxy.imageInfo.rotationDegrees
+        )
+        val status = FaceGeometry.status(box, frame.width, frame.height)
+
+        if (status == FaceDetectionStatus.ALIGNED) {
+            if (consecutiveAlignedFrames < READY_FRAMES) consecutiveAlignedFrames++
+        } else {
+            consecutiveAlignedFrames = 0
+        }
+
+        publishStatus(status)
+        publishReady(consecutiveAlignedFrames >= READY_FRAMES)
+
+        if (!captureRequested) return
+
+        if (status != FaceDetectionStatus.ALIGNED) {
+            // The face slipped out of the oval after the tap. Hold the request briefly so a
+            // momentary wobble does not waste the tap, then give up out loud.
+            if (System.nanoTime() > captureDeadlineNanos) {
+                captureRequested = false
+                PixelPassLog.w(
+                    PixelPassLog.CAMERA,
+                    "Capture missed: no aligned face inside the oval within the request window"
+                )
+                consumeReadyState()
+                onCaptureMissed()
+            }
+            return
+        }
+
+        captureRequested = false
+        val bitmap = imageProxyToBitmap(imageProxy)
+        val croppedFace = bitmap?.let { cropFace(it, box) }
+
+        if (croppedFace == null) {
+            PixelPassLog.w(PixelPassLog.CAMERA, "Capture missed: the face could not be cropped")
+            consumeReadyState()
+            onCaptureMissed()
+            return
+        }
+
+        // Readiness is consumed by the capture: the guard has to see the oval confirmed
+        // again before a second frame can be taken.
+        consumeReadyState()
+        val base64 = bitmapToBase64(croppedFace)
+        PixelPassLog.i(
+            PixelPassLog.CAMERA,
+            "Face captured on request (${croppedFace.width}x${croppedFace.height}, ${base64.length} chars)"
+        )
+        onFaceExtracted(base64)
+    }
+
+    /** Drops the current confirmation so the next capture needs a fresh, stable alignment. */
+    private fun consumeReadyState() {
+        consecutiveAlignedFrames = 0
+        publishReady(false)
+    }
+
+    private fun cropFace(bitmap: Bitmap, box: FaceBox): Bitmap? =
+        FaceGeometry
+            .cropRect(box, bitmap.width, bitmap.height, mirrored = mirrorHorizontally)
+            ?.let { Bitmap.createBitmap(bitmap, it.left, it.top, it.width, it.height) }
+
+    private fun Rect.toFaceBox() = FaceBox(left, top, right, bottom)
+
+    private fun publishStatus(status: FaceDetectionStatus) {
+        // One status per change: the preview would otherwise rewrite the status chip 30x a second.
+        if (status == lastStatus) return
+        lastStatus = status
+        onStatusUpdate(status)
+    }
+
+    private fun publishReady(ready: Boolean) {
+        if (ready == isReady) return
+        isReady = ready
+        onReadyChanged(ready)
+    }
+
+    /** Releases the ML Kit detector; the camera executor is owned by the preview. */
+    fun close() {
+        runCatching { detector.close() }
     }
 
     private fun bitmapToBase64(bitmap: Bitmap): String {
         val outputStream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
+        bitmap.compress(Bitmap.CompressFormat.JPEG, CAPTURE_JPEG_QUALITY, outputStream)
         val byteArray = outputStream.toByteArray()
         return Base64.encodeToString(byteArray, Base64.NO_WRAP)
     }
@@ -149,8 +214,19 @@ class FaceAnalyzer(
 
         val matrix = Matrix()
         matrix.postRotate(imageProxy.imageInfo.rotationDegrees.toFloat())
-        matrix.postScale(-1f, 1f, rawBitmap.width / 2f, rawBitmap.height / 2f)
+        if (mirrorHorizontally) {
+            matrix.postScale(-1f, 1f, rawBitmap.width / 2f, rawBitmap.height / 2f)
+        }
 
         return Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)
+    }
+
+    private companion object {
+        const val READY_FRAMES = 3
+        const val CAPTURE_JPEG_QUALITY = 80
+
+        // A tap is honoured for this long, so a face that leaves the oval for a heartbeat
+        // still lands the capture instead of silently doing nothing.
+        val CAPTURE_WINDOW_NANOS = 1_500_000_000L
     }
 }

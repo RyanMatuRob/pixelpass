@@ -13,8 +13,29 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.pixelpass.core.PixelPassLog
 import com.pixelpass.utils.QrCodeAnalyzer
 import java.util.concurrent.Executors
+
+/**
+ * The CameraX use cases one preview instance owns.
+ *
+ * Disposal releases only these, because the incoming navigation destination has
+ * already bound its own camera by the time the transition finishes; a blanket
+ * `unbindAll()` there would tear down the live preview of the next screen.
+ */
+private class OwnedUseCases {
+    var preview: Preview? = null
+    var analysis: ImageAnalysis? = null
+
+    fun unbindFrom(provider: ProcessCameraProvider?) {
+        val owned = listOfNotNull(preview, analysis).toTypedArray()
+        preview = null
+        analysis = null
+        if (provider == null || owned.isEmpty()) return
+        runCatching { provider.unbind(*owned) }
+    }
+}
 
 @Composable
 fun CameraPreview(
@@ -36,6 +57,8 @@ fun CameraPreview(
             scaleType = PreviewView.ScaleType.FILL_CENTER
         }
     }
+
+    val ownedUseCases = remember { OwnedUseCases() }
 
     // Initialize CameraProvider once
     LaunchedEffect(Unit) {
@@ -75,6 +98,8 @@ fun CameraPreview(
 
         try {
             provider.unbindAll()
+            ownedUseCases.preview = preview
+            ownedUseCases.analysis = imageAnalyzer
             val boundCamera = provider.bindToLifecycle(
                 lifecycleOwner,
                 cameraSelector,
@@ -82,6 +107,7 @@ fun CameraPreview(
                 imageAnalyzer
             )
             camera = boundCamera
+            PixelPassLog.i(PixelPassLog.CAMERA, "Scanner preview bound (lens=$lensFacing)")
 
             // Apply initial torch state if camera supports flash
             if (boundCamera.cameraInfo.hasFlashUnit()) {
@@ -103,8 +129,11 @@ fun CameraPreview(
     // Clean up resources on disposal
     DisposableEffect(Unit) {
         onDispose {
-            cameraProvider?.unbindAll()
+            // Release only this preview's own use cases. The next destination binds its
+            // camera before this screen is disposed, so unbindAll() would kill it.
+            ownedUseCases.unbindFrom(cameraProvider)
             cameraExecutor.shutdown()
+            PixelPassLog.i(PixelPassLog.CAMERA, "Scanner preview disposed")
         }
     }
 
