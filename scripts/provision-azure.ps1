@@ -1,16 +1,18 @@
 <#
 .SYNOPSIS
-Creates the two PixelPass App Services and wires their publish profiles into GitHub.
+Creates the two PixelPass App Services and wires their deploy identity into GitHub.
 
 .DESCRIPTION
 Implements phases 1 to 3 of DEPLOYMENT.md in one idempotent pass:
 
   1. resource group, two Linux App Service plans and two Web Apps;
   2. startup commands, HTTPS-only, and the application settings the code actually reads;
-  3. publish profiles uploaded as GitHub secrets plus the two repository variables.
+  3. the two app-name variables, plus the Entra ID identity that GitHub Actions signs in with
+     (scripts/setup-azure-oidc.ps1).
 
 Re-running is safe: existing plans and Web Apps are updated instead of recreated. Nothing is
-written inside the repository, and the downloaded publish profiles are shredded after upload.
+written inside the repository, and no deployment credential is ever stored there: the workflows
+use OIDC, not publish profiles.
 
 The settings intentionally match the source, which is easy to get wrong by hand:
   - the API reads MONGO_URI, not MONGODB_URI (only scripts/seedUsers.js falls back to the latter);
@@ -22,6 +24,9 @@ MongoDB Atlas connection string. Required unless -DryRun is used.
 
 .PARAMETER JwtSecret
 Signing secret for admin sessions and visitor passes. Generated with a CSPRNG when omitted.
+
+.PARAMETER SubscriptionId
+Subscription for the OIDC role assignment. Defaults to the subscription az is pointing at.
 
 .EXAMPLE
 az login
@@ -41,6 +46,7 @@ param(
     [string]$MlSku = 'B2',
     [string]$ApiRuntime = 'NODE|22-lts',
     [string]$MlRuntime = 'PYTHON|3.13',
+    [string]$SubscriptionId,
     [switch]$SkipGitHub,
     [switch]$DryRun
 )
@@ -129,18 +135,6 @@ function New-Secret([int]$ByteCount) {
     return [Convert]::ToBase64String($bytes)
 }
 
-# Overwrites the bytes before deleting, because a publish profile is a credential.
-function Remove-CredentialFile([string]$Path) {
-    if (-not (Test-Path $Path)) { return }
-    $length = (Get-Item -LiteralPath $Path).Length
-    if ($length -gt 0) {
-        $noise = New-Object 'byte[]' $length
-        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-        $rng.GetBytes($noise)
-        [System.IO.File]::WriteAllBytes($Path, $noise)
-    }
-    Remove-Item -LiteralPath $Path -Force
-}
 
 # ---------------------------------------------------------------------------------------------
 # Preflight
@@ -172,7 +166,7 @@ if (-not $SkipGitHub) {
         }
         Push-Location $repoRoot
     }
-    Write-Note 'Publish profiles go to repository secrets, app names to repository variables.'
+    Write-Note 'App names go to repository variables; the deploy identity is created by setup-azure-oidc.ps1.'
 }
 
 if (-not $ApiAppName -or -not $MlAppName) {
@@ -256,7 +250,7 @@ else {
     Invoke-Az @('webapp', 'create', '--name', $MlAppName, '--resource-group', $ResourceGroup,
         '--plan', $mlPlanName, '--runtime', $MlRuntime, '--output', 'none')
 }
-# A publish profile cannot set a startup command, so it is configured once here.
+# A zip deploy carries no settings, so the startup command is configured once here.
 Invoke-Az @('webapp', 'config', 'set', '--name', $MlAppName, '--resource-group', $ResourceGroup,
     '--linux-fx-version', $MlRuntime, '--startup-file', 'bash /home/site/wwwroot/startup.sh',
     '--output', 'none')
@@ -303,43 +297,29 @@ foreach ($app in @($ApiAppName, $MlAppName)) {
 }
 
 # ---------------------------------------------------------------------------------------------
-# 3. Publish profiles, GitHub secrets and variables
+# 3. GitHub variables and the OIDC identity the workflows sign in with
 # ---------------------------------------------------------------------------------------------
 if (-not $SkipGitHub) {
-    Write-Step 'Wiring the publish profiles into GitHub'
-    $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ('pixelpass-profiles-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    Write-Step 'Wiring the app names and the deploy identity into GitHub'
     $targets = @(
-        [pscustomobject]@{ App = $ApiAppName; Name = 'api'; Secret = 'AZURE_BACKEND_PUBLISH_PROFILE'; Variable = 'AZURE_BACKEND_APP_NAME' }
-        [pscustomobject]@{ App = $MlAppName; Name = 'ml'; Secret = 'AZURE_ML_PUBLISH_PROFILE'; Variable = 'AZURE_ML_APP_NAME' }
+        [pscustomobject]@{ App = $ApiAppName; Variable = 'AZURE_BACKEND_APP_NAME' }
+        [pscustomobject]@{ App = $MlAppName; Variable = 'AZURE_ML_APP_NAME' }
     )
-    if (-not $DryRun) { New-Item -ItemType Directory -Path $tempDir -Force | Out-Null }
     try {
         foreach ($target in $targets) {
-            $profilePath = Join-Path $tempDir "$($target.Name)-profile.xml"
-            if ($DryRun) {
-                Write-Note "[dry-run] az webapp deployment list-publishing-profiles --name $($target.App) --resource-group $ResourceGroup --xml > $profilePath"
-                Write-Note "[dry-run] gh secret set $($target.Secret) --body <$($target.Name) publish profile XML>"
-                Write-Note "[dry-run] gh variable set $($target.Variable) --body $($target.App)"
-                continue
-            }
-            $xml = & az webapp deployment list-publishing-profiles --name $target.App --resource-group $ResourceGroup --xml
-            if ($LASTEXITCODE -ne 0) {
-                throw "Could not read the publish profile for $($target.App)."
-            }
-            $xmlText = ($xml | Out-String)
-            if ($xmlText -notmatch '<publishProfile') {
-                throw "Unexpected publish profile payload for $($target.App)."
-            }
-            [System.IO.File]::WriteAllText($profilePath, $xmlText, (New-Object System.Text.UTF8Encoding($false)))
-            Invoke-Gh @('secret', 'set', $target.Secret, '--body', $xmlText)
             Invoke-Gh @('variable', 'set', $target.Variable, '--body', $target.App)
-            Write-Note "$($target.Secret) and $($target.Variable) are set."
+            Write-Note "$($target.Variable) = $($target.App)"
         }
+        # Publish profiles are deliberately not uploaded. The workflows sign in with a short-lived
+        # OIDC token, so no deployment credential lives in the repository and SCM basic
+        # authentication can stay disabled. The script is idempotent.
+        $oidcScript = Join-Path $PSScriptRoot 'setup-azure-oidc.ps1'
+        $oidcParameters = @{ ResourceGroup = $ResourceGroup }
+        if ($SubscriptionId) { $oidcParameters.SubscriptionId = $SubscriptionId }
+        if ($DryRun) { $oidcParameters.DryRun = $true }
+        & $oidcScript @oidcParameters
     }
     finally {
-        # A publish profile is a deployment credential, so it is shredded even when an upload failed.
-        foreach ($target in $targets) { Remove-CredentialFile (Join-Path $tempDir "$($target.Name)-profile.xml") }
-        if (Test-Path $tempDir) { Remove-Item -LiteralPath $tempDir -Force -Recurse }
         if (-not $DryRun) { Pop-Location }
     }
 }
@@ -353,7 +333,7 @@ Write-Note "ML service      : https://$mlHost/docs"
 Write-Note 'MONGO_URI and JWT_SECRET live only in the Azure app settings; nothing was written to the repository.'
 Write-Host ''
 if ($SkipGitHub) {
-    Write-Host 'GitHub wiring was skipped. Re-run without -SkipGitHub to upload the publish profiles.' -ForegroundColor Yellow
+    Write-Host 'GitHub wiring was skipped. Re-run without -SkipGitHub to set the variables and the OIDC identity.' -ForegroundColor Yellow
 }
 Write-Host 'Next steps:' -ForegroundColor Cyan
 Write-Host '  1. Merge the release PR develop -> main; both deploy workflows then run.'

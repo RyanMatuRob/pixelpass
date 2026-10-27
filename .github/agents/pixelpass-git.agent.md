@@ -500,6 +500,8 @@ This is the running summary for every issue and every pull request. It is append
 | #100 | 4. Testing and Deployment | #102 | Merged 2026-10-27 | Unified App Service: Express serves the admin bundle, same-origin console API, configurable ML endpoint, Azure backend workflow |
 | #101 | 4. Testing and Deployment | #102 | Merged 2026-10-27 | ML runtime pinned, `startup.sh` uvicorn entrypoint, Azure ML workflow, deployment runbook |
 | #55 | 4. Testing and Deployment | #104 | Merged 2026-10-27 | One-shot Azure provisioning script for phases 1 to 3, plus runbook fixes for `MONGO_URI`, the `ML_SERVICE_URL` shape, `--startup-file`, and the runtimes |
+| #107 | 4. Testing and Deployment | #108 | In progress | Azure deploys move from publish profiles to OIDC federated login, with a setup script and runbook rewrite |
+
 
 
 
