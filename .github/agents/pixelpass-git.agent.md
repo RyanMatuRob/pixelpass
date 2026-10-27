@@ -499,6 +499,7 @@ This is the running summary for every issue and every pull request. It is append
 | #97 | 1. Mobile App Implementation | #98 | Merged 2026-10-25 | `@JvmOverloads` restores the `(Application)` constructor the session gate needs at launch, guarded by a reflection test |
 | #100 | 4. Testing and Deployment | #102 | Merged 2026-10-27 | Unified App Service: Express serves the admin bundle, same-origin console API, configurable ML endpoint, Azure backend workflow |
 | #101 | 4. Testing and Deployment | #102 | Merged 2026-10-27 | ML runtime pinned, `startup.sh` uvicorn entrypoint, Azure ML workflow, deployment runbook |
+| #55 | 4. Testing and Deployment | #104 | In review | One-shot Azure provisioning script for phases 1 to 3, plus runbook fixes for `MONGO_URI`, the `ML_SERVICE_URL` shape, `--startup-file`, and the runtimes |
 
 
 
