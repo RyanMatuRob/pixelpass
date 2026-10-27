@@ -126,7 +126,7 @@ Settings -> Secrets and variables -> Actions.
 | --- | --- | --- |
 | Variable | `AZURE_BACKEND_APP_NAME` | e.g. `pixelpass-api` |
 | Variable | `AZURE_ML_APP_NAME` | e.g. `pixelpass-ml` |
-| Variable | `AZURE_CLIENT_ID` | Application (client) ID, printed by `scripts/setup-azure-oidc.ps1` |
+| Variable | `AZURE_CLIENT_ID` | Client ID of the deploy identity (application or managed identity), printed by `scripts/setup-azure-oidc.ps1` |
 | Variable | `AZURE_TENANT_ID` | Printed by the same script |
 | Variable | `AZURE_SUBSCRIPTION_ID` | Printed by the same script |
 | Variable | `AZURE_RESOURCE_GROUP` | Resource group that holds both apps |
@@ -146,10 +146,20 @@ az login
 .\scripts\setup-azure-oidc.ps1
 ```
 
+The script prefers an Entra ID application and falls back to a user-assigned managed identity when the
+account may not register applications (`Insufficient privileges to complete the operation`), which is
+the usual state of a student or locked-down tenant. A managed identity is created through Azure
+Resource Manager, needs no directory rights, and `azure/login` accepts its client ID in the same way.
+Pass `-IdentityType AppRegistration` or `-IdentityType ManagedIdentity` to force one flavour, and note
+that managed identities are refused outside the subscription's allowed regions, so the resource
+group's own region is used.
+
 It grants `Contributor` on the resource group only, and adds a federated credential for both
 `refs/heads/main` and the `production` environment, because a job that declares an environment
-authenticates with the environment subject rather than the branch one. Verify with `gh variable list`
-before triggering a deployment, then delete the now unused secrets:
+authenticates with the environment subject rather than the branch one. Both the plain and the
+id-qualified subject are registered, because GitHub may present the immutable form
+`repo:Owner@168424652/Repository@1393706386:environment:production` instead of `repo:Owner/Repository`.
+Verify with `gh variable list` before triggering a deployment, then delete the now unused secrets:
 
 ```powershell
 gh secret delete AZURE_BACKEND_PUBLISH_PROFILE
@@ -210,7 +220,10 @@ the Vite proxy, so development behaviour is unchanged. `pixelpass-backend/public
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | Deploy step: `Publish profile is invalid for app-name and slot-name provided`, with a 401 on `*.scm.azurewebsites.net` | The job still authenticates with a publish profile, and SCM basic auth is disabled by policy or the profile is stale | Run `scripts/setup-azure-oidc.ps1`; the shipped workflows use OIDC and need no profile |
-| `Sign in to Azure` step: `AADSTS70021` or `No matching federated identity record found` | The federated credential subject does not match the ref or the environment | Re-run `scripts/setup-azure-oidc.ps1`, which adds both `refs/heads/main` and `environment:production` |
+| `Sign in to Azure` step: `AADSTS70021`, `AADSTS700213` or `No matching federated identity record found` | The federated credential subject does not match the ref, the environment, or the id-qualified form GitHub now sends | Re-run `scripts/setup-azure-oidc.ps1`, which adds both `refs/heads/main` and `environment:production` in plain and immutable forms |
+| Script fails at `Entra ID application`: `Insufficient privileges to complete the operation` | The account may not register applications in this tenant | Nothing to fix: the script falls back to a managed identity, or pass `-IdentityType ManagedIdentity` |
+| Script fails with `RequestDisallowedByAzure` on `identity create` | Managed identities are restricted to the subscription's allowed regions | Pass `-IdentityLocation` with an allowed region; the script defaults to the resource group's region |
+| `Could not read the subscription id from az` | The az context is unusable, or the CLI is installed without being on `PATH` | The script searches the standard install paths; otherwise run `az login`, or pass `-SubscriptionId` and `-TenantId` |
 | Deploy step: `Resource not found` | Wrong `AZURE_*_APP_NAME`, or the role assignment is missing | Check `gh variable list`, then re-run `scripts/setup-azure-oidc.ps1` |
 | App starts, every route returns `Cannot GET /` | Static folder empty, or `SCM_DO_BUILD_DURING_DEPLOYMENT=false` | Re-run the backend workflow; confirm `pixelpass-backend/public/index.html` was produced |
 | `/` works, deep links 404 | The SPA fallback is not the last middleware | Keep the fallback after all `/api` mounts in `server.js` |
