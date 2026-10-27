@@ -27,6 +27,21 @@ requirements.txt`), so the uploaded archive never contains `node_modules` or a v
 
 ## 1. Create the Azure resources
 
+Sections 1 to 3 are automated by `scripts/provision-azure.ps1`. Preview every command first, then
+run it for real:
+
+```powershell
+az login
+.\scripts\provision-azure.ps1 -DryRun
+.\scripts\provision-azure.ps1 -MongoUri 'mongodb+srv://user:pass@cluster0.abc.mongodb.net/pixelpass'
+```
+
+The script is idempotent, generates the JWT secret with a CSPRNG, uploads both publish profiles as
+GitHub secrets, shreds the downloaded profiles afterwards, and prints the resulting URLs. It also
+avoids the two settings that silently break a hand-built deployment: `MONGO_URI` versus
+`MONGODB_URI`, and a `/predict` suffix on `ML_SERVICE_URL`. The commands below are the same steps
+written out, for portal users and for auditing what the script does.
+
 Values used below are placeholders; keep them consistent with the GitHub variables in step 3.
 
 ```powershell
@@ -36,17 +51,24 @@ az group create --name $rg --location westeurope
 # Backend plan: one small Linux plan is enough for Express plus the static console.
 az appservice plan create --name pixelpass-api-plan --resource-group $rg --sku B1 --is-linux
 az webapp create --name pixelpass-api --resource-group $rg --plan pixelpass-api-plan --runtime "NODE|22-lts"
-az webapp config set --name pixelpass-api --resource-group $rg --linux-fx-version "NODE|22-lts" --startup-command "npm start"
+az webapp config set --name pixelpass-api --resource-group $rg --linux-fx-version "NODE|22-lts" --startup-file "npm start"
 
-# ML plan: TensorFlow + Facenet need about 2 GB resident, so B1 is not enough.
-az appservice plan create --name pixelpass-ml-plan --resource-group $rg --sku P1v3 --is-linux
+# ML plan: TensorFlow plus Facenet need about 2 GB resident, so it gets its own plan.
+# B2 is 3.5 GB and the cheapest tier that survives the first /predict; P1v3 is the safe upgrade.
+az appservice plan create --name pixelpass-ml-plan --resource-group $rg --sku B2 --is-linux
 az webapp create --name pixelpass-ml --resource-group $rg --plan pixelpass-ml-plan --runtime "PYTHON|3.13"
-az webapp config set --name pixelpass-ml --resource-group $rg --linux-fx-version "PYTHON|3.13" --startup-command "bash /home/site/wwwroot/startup.sh"
+az webapp config set --name pixelpass-ml --resource-group $rg --linux-fx-version "PYTHON|3.13" --startup-file "bash /home/site/wwwroot/startup.sh"
 ```
+
+Do not put both Web Apps on one B1 plan: 1.75 GB is shared by every app on the plan, and the
+TensorFlow import alone takes most of it. `--startup-file` is the flag that sets the Linux startup
+command; `--startup-command` only exists for container settings and fails on `webapp config set`.
+Node 20 is end-of-life and the workflow builds with 22.x, so keep `NODE|22-lts`.
 
 Check the runtimes your subscription offers before creating anything: `az webapp list-runtimes
 --linux`. If `PYTHON|3.13` is unavailable, use `PYTHON|3.12` and expect pip to resolve slightly
 older wheels for the pinned requirements.
+
 
 ## 2. Application settings
 
@@ -67,6 +89,13 @@ Service install dependencies after the zip lands.
 | `INVITE_BASE_URL` | `https://pixelpass-api.azurewebsites.net/invite` | Base of the visitor invite link hosts send out |
 | `PUBLIC_KEY_PATH` | `src/config/keys/jwtRS256.key.pub` | Public half of the committed RS256 key pair |
 | `PORT` | leave unset | App Service injects it; `server.js` already reads `process.env.PORT` |
+
+Two names in that table are easy to get wrong:
+
+- `MONGO_URI` is what `server.js` reads. `MONGODB_URI` is only a fallback inside
+  `scripts/seedUsers.js`, so setting it alone leaves the API connecting to `undefined`.
+- `ML_SERVICE_URL` is the service root, without `/predict`: `routes/scan.js` appends `/predict`
+  itself, so a value ending in `/predict` produces `/predict/predict` and every scan fails.
 
 Do **not** set `PRIVATE_KEY_PATH` and never commit the private key: `services/tokenService.js`
 reads it lazily and no route calls it today, so production does not need it. If RS256 signing is
@@ -97,15 +126,27 @@ Settings -> Secrets and variables -> Actions.
 | Secret | `AZURE_BACKEND_PUBLISH_PROFILE` | Portal -> `pixelpass-api` -> **Download publish profile**, paste the whole XML |
 | Secret | `AZURE_ML_PUBLISH_PROFILE` | Portal -> `pixelpass-ml` -> **Download publish profile**, paste the whole XML |
 
-The same profiles are printable from the CLI, ready to copy into the secret field:
+The same profiles can go straight from the CLI into the secrets — no file, no copy-paste. `--body`
+takes the multi-line XML; PowerShell reserves `<` for redirection, so `gh secret set X < file` is not
+valid here, and `Out-String` keeps the newlines that a raw pipeline would collapse:
 
 ```powershell
-az webapp deployment list-publishing-profiles --name pixelpass-api --resource-group pixelpass-rg --xml | Set-Clipboard
-az webapp deployment list-publishing-profiles --name pixelpass-ml --resource-group pixelpass-rg --xml | Set-Clipboard
+gh variable set AZURE_BACKEND_APP_NAME --body pixelpass-api
+gh variable set AZURE_ML_APP_NAME --body pixelpass-ml
+
+$apiProfile = az webapp deployment list-publishing-profiles --name pixelpass-api --resource-group pixelpass-rg --xml | Out-String
+gh secret set AZURE_BACKEND_PUBLISH_PROFILE --body $apiProfile
+
+$mlProfile = az webapp deployment list-publishing-profiles --name pixelpass-ml --resource-group pixelpass-rg --xml | Out-String
+gh secret set AZURE_ML_PUBLISH_PROFILE --body $mlProfile
 ```
+
+`scripts/provision-azure.ps1` does the same thing and shreds the local copies if one is written.
+Verify with `gh secret list` and `gh variable list` before triggering a deployment.
 
 Both jobs use the `production` GitHub environment. GitHub creates it on the first run; add
 required reviewers there if a human gate before deployment is wanted.
+
 
 ## 4. First deployment
 
