@@ -18,17 +18,20 @@ TensorFlow needs its own memory budget and release cadence.
 
 | Workflow | Trigger | Steps |
 | --- | --- | --- |
-| `.github/workflows/deploy-backend.yml` | `push` to `main` touching `pixelpass-admin/**` or `pixelpass-backend/**`, or manual dispatch | `npm ci` + `npm run build` in `pixelpass-admin` (emits into `pixelpass-backend/public`), syntax checks, then `azure/webapps-deploy` of `pixelpass-backend` |
-| `.github/workflows/deploy-ml.yml` | `push` to `main` touching `pixelpass-ml-service/**`, or manual dispatch | Python syntax and startup-script checks, model artifact check, then `azure/webapps-deploy` of `pixelpass-ml-service` |
+| `.github/workflows/deploy-backend.yml` | `push` to `main` touching `pixelpass-admin/**` or `pixelpass-backend/**`, or manual dispatch | `npm ci` + `npm run build` in `pixelpass-admin` (emits into `pixelpass-backend/public`), syntax checks, `azure/login` (OIDC), then `azure/webapps-deploy` of `pixelpass-backend` |
+| `.github/workflows/deploy-ml.yml` | `push` to `main` touching `pixelpass-ml-service/**`, or manual dispatch | Python syntax and startup-script checks, model artifact check, `azure/login` (OIDC), then `azure/webapps-deploy` of `pixelpass-ml-service` |
 
-Both workflows fail before deploying when the app name or publish profile is missing. App Service
-builds the server-side dependencies itself (Oryx runs `npm install` / `pip install -r
-requirements.txt`), so the uploaded archive never contains `node_modules` or a virtualenv.
+Both workflows sign in with a short-lived OIDC token (`azure/login`, `id-token: write`), so nothing
+in the repository is a deployment credential and SCM basic authentication can stay disabled. They
+fail before deploying when an `AZURE_*` variable is missing. App Service builds the server-side
+dependencies itself (Oryx runs `npm install` / `pip install -r requirements.txt`), so the uploaded
+archive never contains `node_modules` or a virtualenv.
 
 ## 1. Create the Azure resources
 
-Sections 1 to 3 are automated by `scripts/provision-azure.ps1`. Preview every command first, then
-run it for real:
+Sections 1 to 3 are automated by `scripts/provision-azure.ps1`, which finishes by calling
+`scripts/setup-azure-oidc.ps1` to create the identity the workflows sign in with. Preview every
+command first, then run it for real:
 
 ```powershell
 az login
@@ -36,11 +39,11 @@ az login
 .\scripts\provision-azure.ps1 -MongoUri 'mongodb+srv://user:pass@cluster0.abc.mongodb.net/pixelpass'
 ```
 
-The script is idempotent, generates the JWT secret with a CSPRNG, uploads both publish profiles as
-GitHub secrets, shreds the downloaded profiles afterwards, and prints the resulting URLs. It also
-avoids the two settings that silently break a hand-built deployment: `MONGO_URI` versus
-`MONGODB_URI`, and a `/predict` suffix on `ML_SERVICE_URL`. The commands below are the same steps
-written out, for portal users and for auditing what the script does.
+The script is idempotent, generates the JWT secret with a CSPRNG, sets the repository variables,
+creates the OIDC identity, and prints the resulting URLs. It also avoids the two settings that
+silently break a hand-built deployment: `MONGO_URI` versus `MONGODB_URI`, and a `/predict` suffix on
+`ML_SERVICE_URL`. The commands below are the same steps written out, for portal users and for
+auditing what the script does.
 
 Values used below are placeholders; keep them consistent with the GitHub variables in step 3.
 
@@ -123,26 +126,38 @@ Settings -> Secrets and variables -> Actions.
 | --- | --- | --- |
 | Variable | `AZURE_BACKEND_APP_NAME` | e.g. `pixelpass-api` |
 | Variable | `AZURE_ML_APP_NAME` | e.g. `pixelpass-ml` |
-| Secret | `AZURE_BACKEND_PUBLISH_PROFILE` | Portal -> `pixelpass-api` -> **Download publish profile**, paste the whole XML |
-| Secret | `AZURE_ML_PUBLISH_PROFILE` | Portal -> `pixelpass-ml` -> **Download publish profile**, paste the whole XML |
+| Variable | `AZURE_CLIENT_ID` | Application (client) ID, printed by `scripts/setup-azure-oidc.ps1` |
+| Variable | `AZURE_TENANT_ID` | Printed by the same script |
+| Variable | `AZURE_SUBSCRIPTION_ID` | Printed by the same script |
+| Variable | `AZURE_RESOURCE_GROUP` | Resource group that holds both apps |
 
-The same profiles can go straight from the CLI into the secrets — no file, no copy-paste. `--body`
-takes the multi-line XML; PowerShell reserves `<` for redirection, so `gh secret set X < file` is not
-valid here, and `Out-String` keeps the newlines that a raw pipeline would collapse:
+No publish profile belongs in this repository. The workflows present a token that Azure exchanges
+for a short-lived one, which keeps working when SCM and FTP basic authentication are disabled by
+policy — the state that makes a publish-profile deploy fail with `Publish profile is invalid for
+app-name and slot-name provided`.
+
+The variables can be set by hand, but the identity behind them should come from the script: it
+creates the Entra ID application, its service principal, the federated credentials and the role
+assignment, then writes the variables.
 
 ```powershell
-gh variable set AZURE_BACKEND_APP_NAME --body pixelpass-api
-gh variable set AZURE_ML_APP_NAME --body pixelpass-ml
-
-$apiProfile = az webapp deployment list-publishing-profiles --name pixelpass-api --resource-group pixelpass-rg --xml | Out-String
-gh secret set AZURE_BACKEND_PUBLISH_PROFILE --body $apiProfile
-
-$mlProfile = az webapp deployment list-publishing-profiles --name pixelpass-ml --resource-group pixelpass-rg --xml | Out-String
-gh secret set AZURE_ML_PUBLISH_PROFILE --body $mlProfile
+az login
+.\scripts\setup-azure-oidc.ps1 -DryRun
+.\scripts\setup-azure-oidc.ps1
 ```
 
-`scripts/provision-azure.ps1` does the same thing and shreds the local copies if one is written.
-Verify with `gh secret list` and `gh variable list` before triggering a deployment.
+It grants `Contributor` on the resource group only, and adds a federated credential for both
+`refs/heads/main` and the `production` environment, because a job that declares an environment
+authenticates with the environment subject rather than the branch one. Verify with `gh variable list`
+before triggering a deployment, then delete the now unused secrets:
+
+```powershell
+gh secret delete AZURE_BACKEND_PUBLISH_PROFILE
+gh secret delete AZURE_ML_PUBLISH_PROFILE
+```
+
+`scripts/provision-azure.ps1` does the same thing in one pass, so a fresh environment does not need
+this script on its own.
 
 Both jobs use the `production` GitHub environment. GitHub creates it on the first run; add
 required reviewers there if a human gate before deployment is wanted.
@@ -194,7 +209,9 @@ the Vite proxy, so development behaviour is unchanged. `pixelpass-backend/public
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| Deploy step: `Resource not found` or 401 | Publish profile stale after a plan or app rename | Re-download the profile and replace the secret |
+| Deploy step: `Publish profile is invalid for app-name and slot-name provided`, with a 401 on `*.scm.azurewebsites.net` | The job still authenticates with a publish profile, and SCM basic auth is disabled by policy or the profile is stale | Run `scripts/setup-azure-oidc.ps1`; the shipped workflows use OIDC and need no profile |
+| `Sign in to Azure` step: `AADSTS70021` or `No matching federated identity record found` | The federated credential subject does not match the ref or the environment | Re-run `scripts/setup-azure-oidc.ps1`, which adds both `refs/heads/main` and `environment:production` |
+| Deploy step: `Resource not found` | Wrong `AZURE_*_APP_NAME`, or the role assignment is missing | Check `gh variable list`, then re-run `scripts/setup-azure-oidc.ps1` |
 | App starts, every route returns `Cannot GET /` | Static folder empty, or `SCM_DO_BUILD_DURING_DEPLOYMENT=false` | Re-run the backend workflow; confirm `pixelpass-backend/public/index.html` was produced |
 | `/` works, deep links 404 | The SPA fallback is not the last middleware | Keep the fallback after all `/api` mounts in `server.js` |
 | `Application Error` with `Cannot find module 'express'` | Oryx build skipped | Set `SCM_DO_BUILD_DURING_DEPLOYMENT=true` and redeploy |

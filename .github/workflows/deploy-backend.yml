@@ -12,6 +12,8 @@ on:
 
 permissions:
   contents: read
+  # Exchanged for a short-lived Azure token, so no publish profile or stored password is needed.
+  id-token: write
 
 concurrency:
   group: deploy-backend-production
@@ -59,23 +61,42 @@ jobs:
           node --check src/server.js
           node --check src/routes/scan.js
 
+      # Every value here comes from scripts/setup-azure-oidc.ps1. A missing one fails the run with a
+      # clear message before anything is uploaded.
       - name: Check deployment configuration
         env:
           APP_NAME: ${{ vars.AZURE_BACKEND_APP_NAME }}
-          PUBLISH_PROFILE: ${{ secrets.AZURE_BACKEND_PUBLISH_PROFILE }}
+          CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
         run: |
-          if [ -z "${APP_NAME}" ]; then
-            echo "::error::Repository variable AZURE_BACKEND_APP_NAME is not set."
-            exit 1
-          fi
-          if [ -z "${PUBLISH_PROFILE}" ]; then
-            echo "::error::Repository secret AZURE_BACKEND_PUBLISH_PROFILE is not set."
-            exit 1
-          fi
+          missing=0
+          for pair in \
+            "AZURE_BACKEND_APP_NAME=${APP_NAME}" \
+            "AZURE_CLIENT_ID=${CLIENT_ID}" \
+            "AZURE_TENANT_ID=${TENANT_ID}" \
+            "AZURE_SUBSCRIPTION_ID=${SUBSCRIPTION_ID}" \
+            "AZURE_RESOURCE_GROUP=${RESOURCE_GROUP}"; do
+            if [ -z "${pair#*=}" ]; then
+              echo "::error::Repository variable ${pair%%=*} is not set. Run scripts/setup-azure-oidc.ps1."
+              missing=1
+            fi
+          done
+          exit ${missing}
+
+      # OIDC: Azure trusts a token issued for this repository and environment, so the job never holds
+      # a publish profile. SCM basic authentication can stay disabled on the Web App.
+      - name: Sign in to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ vars.AZURE_BACKEND_APP_NAME }}
-          publish-profile: ${{ secrets.AZURE_BACKEND_PUBLISH_PROFILE }}
+          resource-group-name: ${{ vars.AZURE_RESOURCE_GROUP }}
           package: pixelpass-backend
