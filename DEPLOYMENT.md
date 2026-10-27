@@ -19,13 +19,15 @@ TensorFlow needs its own memory budget and release cadence.
 | Workflow | Trigger | Steps |
 | --- | --- | --- |
 | `.github/workflows/deploy-backend.yml` | `push` to `main` touching `pixelpass-admin/**` or `pixelpass-backend/**`, or manual dispatch | `npm ci` + `npm run build` in `pixelpass-admin` (emits into `pixelpass-backend/public`), syntax checks, `azure/login` (OIDC), then `azure/webapps-deploy` of `pixelpass-backend` |
-| `.github/workflows/deploy-ml.yml` | `push` to `main` touching `pixelpass-ml-service/**`, or manual dispatch | Python syntax and startup-script checks, model artifact check, `azure/login` (OIDC), then `azure/webapps-deploy` of `pixelpass-ml-service` |
+| `.github/workflows/deploy-ml.yml` | `push` to `main` touching `pixelpass-ml-service/**`, or manual dispatch | Python syntax and startup-script checks, model artifact check, `pip install --target` into the package on the runner, OIDC sign-in, App Service settings via `az`, then `azure/webapps-deploy` of the prepared zip and a `/docs` probe |
 
 Both workflows sign in with a short-lived OIDC token (`azure/login`, `id-token: write`), so nothing
 in the repository is a deployment credential and SCM basic authentication can stay disabled. They
-fail before deploying when an `AZURE_*` variable is missing. App Service builds the server-side
-dependencies itself (Oryx runs `npm install` / `pip install -r requirements.txt`), so the uploaded
-archive never contains `node_modules` or a virtualenv.
+fail before deploying when an `AZURE_*` variable is missing. The backend still lets App Service build
+its dependencies (Oryx runs `npm install`), so its archive never contains `node_modules`. The ML
+archive is different: the workflow resolves `requirements.txt` on the runner into `python-packages`
+and ships it, because the platform build there produced `output.tar.zst` and never unpacked it
+(#111).
 
 ## 1. Create the Azure resources
 
@@ -76,8 +78,9 @@ older wheels for the pinned requirements.
 ## 2. Application settings
 
 Set these in **Portal -> App Service -> Configuration -> Application settings** (or with
-`az webapp config appsettings set`). `SCM_DO_BUILD_DURING_DEPLOYMENT=true` is what makes App
-Service install dependencies after the zip lands.
+`az webapp config appsettings set`). On the backend, `SCM_DO_BUILD_DURING_DEPLOYMENT=true` is what
+makes App Service install dependencies after the zip lands. On the ML app the workflow sets the
+values below itself on every deploy, so they cannot drift.
 
 ### `pixelpass-api` (backend + console)
 
@@ -109,14 +112,18 @@ workflow instead of committing it.
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| `SCM_DO_BUILD_DURING_DEPLOYMENT` | `true` | Oryx runs `pip install -r requirements.txt` |
+| `SCM_DO_BUILD_DURING_DEPLOYMENT` | `false` | The zip already carries `python-packages`; a platform build only recompresses the app into an `output.tar.zst` the container never unpacks (#111) |
 | `WEBSITES_PORT` | `8000` | Port the platform proxy forwards to |
+| `PYTHONPATH` | `/home/site/wwwroot/python-packages` | Makes the bundled dependencies importable; `startup.sh` sets the same path as a fallback |
 | `PYTHONUNBUFFERED` | `1` | Streams DeepFace/TensorFlow logs to the log stream |
+| `WEBSITES_CONTAINER_START_TIME_LIMIT` | `600` | The TensorFlow import plus the Facenet warm-up exceed the 230 s default before uvicorn binds |
 
-`startup.sh` binds uvicorn to `0.0.0.0:$PORT`, so no uvicorn flags belong in the startup command.
-Keep `/home` persistent (the default for code deployments): DeepFace downloads the ~90 MB Facenet
-weights into the home directory on the first `/predict` call, and a wiped home pays that download
-plus a cold TensorFlow import (about 9 s on the reference laptop) on every scan.
+The workflow also turns **Always On** on, so the container is not recycled between visits and a scan
+does not pay the cold start. `startup.sh` binds uvicorn to `0.0.0.0:$PORT`, so no uvicorn flags belong
+in the startup command. Keep `/home` persistent (the default for code deployments): DeepFace
+downloads the ~90 MB Facenet weights into the home directory during the lifespan warm-up, and a
+wiped home pays that download plus a cold TensorFlow import (about 9 s on the reference laptop) on
+every scan.
 
 ## 3. GitHub repository configuration
 
@@ -229,19 +236,22 @@ the Vite proxy, so development behaviour is unchanged. `pixelpass-backend/public
 | `/` works, deep links 404 | The SPA fallback is not the last middleware | Keep the fallback after all `/api` mounts in `server.js` |
 | `Application Error` with `Cannot find module 'express'` | Oryx build skipped | Set `SCM_DO_BUILD_DURING_DEPLOYMENT=true` and redeploy |
 | `ImportError: libGL.so.1` on the ML app | GUI OpenCV wheel on a headless image | `opencv-python-headless` is already pinned; redeploy the ML workflow |
-| ML app returns 503 and the docker log shows `Container exited with exit code 127 during startup` | The Oryx build left `output.tar.zst` unextracted, so `/home/site/wwwroot/startup.sh` does not exist | Tracked in #111; `az webapp log config --docker-container-logging filesystem` captures the container output for the next attempt |
-| ML returns 503 for a minute after deploy | TensorFlow import plus Facenet weight download | Expected cold start; keep the plan at B2/P1v3 and warm `/docs` first |
+| `ModuleNotFoundError: No module named 'fastapi'` in the ML container log | The zip landed without `python-packages` | Re-run the ML workflow and confirm the `Build the deployment package` step logs a `python-packages` size |
+| `ValueError: You have tensorflow 2.21.0 and this requires tf-keras package` in the ML log | DeepFace still calls into Keras 2 on TF 2.16+, where Keras 3 is the default | `tf-keras` is pinned next to `tensorflow` in `requirements.txt`; keep the two versions aligned |
+| ML app returns 503 and the docker log shows `Container exited with exit code 127 during startup` | `wwwroot` holds only `output.tar.zst`, so there is no `startup.sh` to run: the platform build ran again | Confirm `SCM_DO_BUILD_DURING_DEPLOYMENT=false` and that the deploy step uploads `ml-app.zip`; the workflow sets the setting on every run |
+| ML returns 503 for the first minutes after a deploy | TensorFlow import plus the Facenet warm-up finish before uvicorn binds | Expected: the workflow probes `/docs` for 7.5 minutes and `WEBSITES_CONTAINER_START_TIME_LIMIT=600` covers the bind |
 | Scan says `Invalid or Expired Token` while the ML log shows a decode error | Seeded staff accounts carry placeholder `referenceFaceBase64` | Use an account with a real enrolled face, or the visitor selfie flow |
 | Invite link points at `localhost` | `INVITE_BASE_URL` not set | Set it to `https://<api-app>.azurewebsites.net/invite` and restart |
 
 ## 8. Known gaps
 
-- The ML service is deployed as code (Oryx + `startup.sh`), not as a container image. Containerising
-  needs an Azure Container Registry, a registry credential secret, and a `webapps-deploy` step with
-  `images:`; the `/predict` contract does not change. Tracked in #43 and #56.
-- The ML app does not start: Oryx compresses its build output to `output.tar.zst` and the platform
-  never extracts it, so the container exits 127 looking for `startup.sh`. The API deploy and the OIDC
-  login are unaffected. Tracked in #111.
+- The ML service is deployed as code (`startup.sh` plus a `python-packages` folder built on the
+  runner), not as a container image. Containerising needs an Azure Container Registry, a registry
+  credential secret, and a `webapps-deploy` step with `images:`; the `/predict` contract does not
+  change. Tracked in #43 and #56.
+- That package carries a few hundred megabytes of wheels, so each ML deploy spends a few minutes
+  installing and uploading. A container image, or a cached dependency layer, is the same follow-up as
+  above.
 - The backend has no automated tests yet (#50), so the pipelines only check syntax and the bundle.
 - `JWT_SECRET` has an insecure code fallback, and the deployment still starts without it: verify the
   setting exists before the release.
