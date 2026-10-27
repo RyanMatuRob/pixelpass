@@ -32,7 +32,7 @@ data class PassCheck(
  *
  * The JWT signature cannot be checked without the gateway's public key, so the
  * checks here are the ones that need no network: device signature, subject
- * binding, token expiry and the 30 s rotation window. The backend still has the
+ * binding, token expiry and the pass rotation window. The backend still has the
  * final say once the scan is synced.
  */
 object PassVerifier {
