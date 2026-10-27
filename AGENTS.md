@@ -37,3 +37,13 @@ When a Git or GitHub task started in local Copilot is handed off, re-read `.gith
 ## Local toolchain
 
 `git` 2.51, `gh` 2.101 authenticated as `RyanMatuRob`, and `node` v24 are available. `core.autocrlf` is `true`, so keep working-tree files using CRLF line endings.
+
+### Capturing images and other binary output
+
+Windows PowerShell 5.1 re-encodes native command output that passes through `>` or a pipe. Binary output such as `adb exec-out screencap -p` or `adb pull` then silently becomes UTF-16 text instead of bytes, and any agent that reads the file poisons the whole conversation with an "unsupported image" error.
+
+- Redirect through `cmd.exe`, not PowerShell: `cmd /c "adb exec-out screencap -p > C:\Users\Matu\AppData\Local\Temp\shot.png"`.
+- Or avoid the stream: `adb shell screencap -p /sdcard/shot.png; adb pull /sdcard/shot.png C:\Users\Matu\AppData\Local\Temp\shot.png; adb shell rm -f /sdcard/shot.png`.
+- Check the magic bytes before reading a capture: `$b = [IO.File]::ReadAllBytes($p); ($b[0..7] | ForEach-Object { $_.ToString('x2') }) -join ' '`. PNG starts with `89 50 4e 47 0d 0a 1a 0a`, JPEG with `ff d8 ff`, and a `ff fe` prefix means the file is UTF-16 text rather than an image.
+- Never read, attach, or commit a capture that fails the check; delete it and recapture.
+- If a task already failed with `You have uploaded an unsupported image`, the bad attachment is stored in `%USERPROFILE%\.cline\data\sessions\<session-id>\<session-id>.messages.json`. Replace that image block with a text placeholder after taking a timestamped backup, then reopen the task; retrying the request only repeats the failure.

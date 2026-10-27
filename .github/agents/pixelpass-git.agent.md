@@ -503,6 +503,10 @@ This is the running summary for every issue and every pull request. It is append
 | #107 | 4. Testing and Deployment | #108 | Merged 2026-10-27 | Azure deploys move from publish profiles to OIDC federated login, with a setup script and runbook rewrite |
 | #109 | 4. Testing and Deployment | #110 | Merged 2026-10-27 | OIDC setup script reads ids without JSON parsing, finds `az` off `PATH`, falls back to a managed identity, and registers immutable subjects |
 | #111 | 4. Testing and Deployment | #113 | Merged 2026-10-27 | ML app boots from a runner-built package (`python-packages` plus `startup.sh`) with no platform build, and DeepFace gets the `tf-keras` shim it needs on TF 2.21 |
+| #115 | 1. Mobile App Implementation | #120 | Merged 2026-10-28 | Preview unbinds only its own use cases, capture is tap-gated on one face in the oval, and face boxes are measured against the upright frame |
+| #116 | 3. Backend Implementation | #121 | Merged 2026-10-28 | `npm run set:face` attaches a real reference photo to one account and re-reads it to confirm the write |
+| #117 | 4. Testing and Deployment | - | Open | Agent guidance covers PowerShell binary capture and the magic-byte check, and the ledger records this batch |
+| #118 | 1. Mobile App Implementation | #119 | Merged 2026-10-28 | Six-digit fallback code travels inside the signed pass, printed under the QR and accepted by the guard on a denied verdict |
 
 
 
