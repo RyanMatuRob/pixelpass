@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
+import com.pixelpass.PixelPassApp
 import com.pixelpass.qr.PassVerdict
 import com.pixelpass.scan.ScanGate
 import com.pixelpass.scan.ScanIntake
@@ -33,10 +34,16 @@ fun ScannerStandbyScreen(
     onQrScanned: (ScanIntake.Accepted) -> Unit,
     onBackClick: () -> Unit = {},
     onReplayDetected: (String) -> Unit = {},
-    intake: suspend (String) -> ScanIntake = { ScanGate.intake(it) }
+    intake: (suspend (String) -> ScanIntake)? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val activeIntake: suspend (String) -> ScanIntake = remember(context, intake) {
+        if (intake != null) intake else {
+            val container = (context.applicationContext as PixelPassApp).container
+            { raw -> container.scanIntake.intake(raw) }
+        }
+    }
     val permissionsState = rememberMultiplePermissionsState(
         permissions = listOf(
             Manifest.permission.CAMERA,
@@ -150,7 +157,7 @@ fun ScannerStandbyScreen(
                         // gateway unless the pass itself is acceptable. A replayed
                         // pass leaves the viewfinder and gets its own full screen.
                         scope.launch {
-                            when (val result = intake(raw)) {
+                            when (val result = activeIntake(raw)) {
                                 is ScanIntake.Accepted -> {
                                     rejection = null
                                     onQrScanned(result)

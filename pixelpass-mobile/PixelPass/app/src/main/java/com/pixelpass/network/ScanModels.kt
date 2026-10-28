@@ -7,6 +7,7 @@ data class TerminalCoordinate(
 
 data class ScanRequest(
     val token: String,
+    val nonce: String? = null,
     val faceImageBase64: String, // Replaced biometricConfidence and biometricOutcome
     val terminalCoordinate: TerminalCoordinate,
     val deviceFingerprint: String
