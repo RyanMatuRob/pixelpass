@@ -19,8 +19,8 @@ import com.pixelpass.ui.screens.ScannerStandbyScreen
 
 private const val ROUTE_QR_GENERATOR = "qrGenerator"
 private const val ROUTE_SCANNER = "scanner_standby"
-private const val ROUTE_BIOMETRIC = "biometric_verification/{jwt}?nonce={nonce}&signed={signed}"
-private const val ROUTE_VERDICT = "scan_verdict/{verdict}?detail={detail}&queued={queued}"
+private const val ROUTE_BIOMETRIC = "biometric_verification/{jwt}?nonce={nonce}&signed={signed}&otp={otp}"
+private const val ROUTE_VERDICT = "scan_verdict/{verdict}?detail={detail}&queued={queued}&otp={otp}"
 
 /**
  * Signed-in navigation. The start destination comes from the signed-in role, so
@@ -66,11 +66,16 @@ fun PixelPassNavigation(session: UserSession, onSignOut: () -> Unit) {
                 navArgument("signed") {
                     type = NavType.BoolType
                     defaultValue = false
+                },
+                navArgument("otp") {
+                    type = NavType.StringType
+                    defaultValue = ""
                 }
             )
         ) { backStackEntry ->
             val jwt = Uri.decode(backStackEntry.arguments?.getString("jwt").orEmpty())
             val nonce = Uri.decode(backStackEntry.arguments?.getString("nonce").orEmpty())
+            val otp = Uri.decode(backStackEntry.arguments?.getString("otp").orEmpty())
             BiometricVerificationScreen(
                 jwt = jwt,
                 nonce = nonce.ifBlank { null },
@@ -79,7 +84,8 @@ fun PixelPassNavigation(session: UserSession, onSignOut: () -> Unit) {
                     navController.navigate(
                         outcome.toVerdict().toRoute(
                             detail = outcome.detail,
-                            queuedForSync = outcome.queuedForSync
+                            queuedForSync = outcome.queuedForSync,
+                            otp = otp.ifBlank { null }
                         )
                     ) {
                         // The face-capture step is done; only the verdict and the
@@ -101,6 +107,10 @@ fun PixelPassNavigation(session: UserSession, onSignOut: () -> Unit) {
                 navArgument("queued") {
                     type = NavType.BoolType
                     defaultValue = false
+                },
+                navArgument("otp") {
+                    type = NavType.StringType
+                    defaultValue = ""
                 }
             )
         ) { backStackEntry ->
@@ -110,7 +120,9 @@ fun PixelPassNavigation(session: UserSession, onSignOut: () -> Unit) {
                     ?: ScanVerdict.DENIED,
                 detail = Uri.decode(backStackEntry.arguments?.getString("detail").orEmpty()),
                 queuedForSync = backStackEntry.arguments?.getBoolean("queued") == true,
-                onScanNext = { navController.popBackStack(ROUTE_SCANNER, inclusive = false) }
+                onScanNext = { navController.popBackStack(ROUTE_SCANNER, inclusive = false) },
+                otp = Uri.decode(backStackEntry.arguments?.getString("otp").orEmpty())
+                    .ifBlank { null }
             )
         }
     }
@@ -120,10 +132,15 @@ fun PixelPassNavigation(session: UserSession, onSignOut: () -> Unit) {
 private fun ScanIntake.Accepted.toBiometricRoute(): String {
     val signed = source == ScanSource.SIGNED_PASS
     return "biometric_verification/${Uri.encode(jwt)}" +
-        "?nonce=${Uri.encode(nonce.orEmpty())}&signed=$signed"
+        "?nonce=${Uri.encode(nonce.orEmpty())}&signed=$signed&otp=${Uri.encode(otp.orEmpty())}"
 }
 
 /** Carries one full-screen verdict, with the sentence the gateway or device produced. */
-private fun ScanVerdict.toRoute(detail: String, queuedForSync: Boolean): String =
-    "scan_verdict/$name?detail=${Uri.encode(detail)}&queued=$queuedForSync"
+private fun ScanVerdict.toRoute(
+    detail: String,
+    queuedForSync: Boolean,
+    otp: String? = null
+): String =
+    "scan_verdict/$name?detail=${Uri.encode(detail)}&queued=$queuedForSync" +
+        "&otp=${Uri.encode(otp.orEmpty())}"
 

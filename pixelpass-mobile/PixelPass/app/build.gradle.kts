@@ -50,11 +50,11 @@ android {
 
     buildTypes {
         debug {
-            // Dynamically injects your current Wi-Fi IP every time you hit Run
-            buildConfigField("String", "BASE_URL", "\"http://$dynamicHostIp:3000/\"")
+            // Point to Azure backend (or switch to "http://$dynamicHostIp:3000/" for local backend)
+            buildConfigField("String", "BASE_URL", "\"https://pixelpass-api-ff4f1e.azurewebsites.net/\"")
         }
         release {
-            buildConfigField("String", "BASE_URL", "\"https://api.yourpixelpass.com/\"")
+            buildConfigField("String", "BASE_URL", "\"https://pixelpass-api-ff4f1e.azurewebsites.net/\"")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

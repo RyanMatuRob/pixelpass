@@ -239,36 +239,6 @@ fun ScannerStandbyScreen(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
-
-            // Fallback PIN Entry Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("● Scanner Standby", color = PrimaryBlue, style = AppTypography.labelLarge)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("Badge damaged or faded?", style = AppTypography.bodyLarge)
-                            Text("Key in 8-digit access credential", color = Color.Gray, style = AppTypography.bodySmall)
-                        }
-                        Button(
-                            onClick = { /* TODO: Open PIN Dialog */ },
-                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text("Enter PIN", color = SurfaceWhite)
-                        }
-                    }
-                }
-            }
         }
     }
 }

@@ -16,6 +16,7 @@ object PixelPassLog {
     const val SESSION = "PixelPass_Session"
     const val QR = "PixelPass_Qr"
     const val SCAN = "PixelPass_Scan"
+    const val CAMERA = "PixelPass_Camera"
     const val DB = "PixelPass_Db"
     const val SYNC = "PixelPass_Sync"
 

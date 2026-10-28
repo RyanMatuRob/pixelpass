@@ -13,8 +13,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.pixelpass.PixelPassApp
+import com.pixelpass.core.PixelPassLog
 import com.pixelpass.scan.ScanOutcome
 import com.pixelpass.scan.ScanRepository
 import com.pixelpass.scan.ScanSource
@@ -50,6 +53,8 @@ fun BiometricVerificationScreen(
     var statusText by remember { mutableStateOf("Align face in the oval...") }
     var isProcessing by remember { mutableStateOf(false) }
     var outcome by remember { mutableStateOf<ScanOutcome?>(null) }
+    var isFaceReady by remember { mutableStateOf(false) }
+    var captureRequest by remember { mutableIntStateOf(0) }
 
     Scaffold(
         topBar = {
@@ -84,19 +89,39 @@ fun BiometricVerificationScreen(
                     .background(Color.Black)
             ) {
                 FaceCameraPreview(
+                    captureRequest = captureRequest,
                     onStatusUpdate = { status ->
                         if (!isProcessing && outcome == null) {
                             statusText = when (status) {
                                 FaceDetectionStatus.NO_FACE -> "Align face in the oval..."
                                 FaceDetectionStatus.TOO_FAR -> "Move closer to the camera"
                                 FaceDetectionStatus.OFF_CENTER -> "Center your face in the oval"
-                                FaceDetectionStatus.ALIGNED -> "Face detected! Hold still..."
+                                FaceDetectionStatus.ALIGNED -> "Face detected — tap Capture"
                             }
+                        }
+                    },
+                    onFaceReady = { ready ->
+                        PixelPassLog.i(
+                            PixelPassLog.CAMERA,
+                            "Capture button ${if (ready) "enabled" else "disabled"}"
+                        )
+                        if (!isProcessing && outcome == null) isFaceReady = ready
+                    },
+                    onCaptureMissed = {
+                        if (!isProcessing && outcome == null) {
+                            // The analyser already dropped its confirmation, so the button
+                            // stays locked until the oval is confirmed again.
+                            statusText = "No face inside the oval. Align it and tap Capture again."
                         }
                     },
                     onFaceDetected = { faceBase64 ->
                         if (!isProcessing && outcome == null) {
+                            PixelPassLog.i(
+                                PixelPassLog.CAMERA,
+                                "Guard capture handed over; starting the gateway check"
+                            )
                             isProcessing = true
+                            isFaceReady = false
                             statusText = "Face captured. Reading terminal telemetry..."
 
                             // 1. Fetch live GPS coordinates
@@ -127,6 +152,10 @@ fun BiometricVerificationScreen(
                                             outcome = result
                                             statusText = result.headline
                                             isProcessing = false
+                                            PixelPassLog.i(
+                                                PixelPassLog.SCAN,
+                                                "Gateway verdict for the captured face: ${result.headline}"
+                                            )
                                             onOutcome(result)
                                         }
                                     }
@@ -142,6 +171,52 @@ fun BiometricVerificationScreen(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
+
+            // The guard takes the frame; the button is only live while a face has held
+            // the oval, so a capture can never be an empty doorway.
+            Button(
+                onClick = {
+                    // Lock the button immediately: the frame is taken on the next analysed
+                    // frame, and a second tap before that would only produce a miss.
+                    PixelPassLog.i(
+                        PixelPassLog.CAMERA,
+                        "Guard pressed Capture Face (request #${captureRequest + 1})"
+                    )
+                    isFaceReady = false
+                    statusText = "Capturing..."
+                    captureRequest++
+                },
+                enabled = isFaceReady && !isProcessing && outcome == null,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                if (isProcessing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text(
+                    text = if (isProcessing) "Verifying..." else "Capture Face",
+                    style = AppTypography.bodyLarge
+                )
+            }
+
+            Text(
+                text = if (isFaceReady) {
+                    "Face inside the oval — tap to capture"
+                } else {
+                    "The button unlocks once a face is inside the oval"
+                },
+                color = Color(0xFF6B7280),
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 12.dp)
+            )
         }
     }
 }

@@ -1,6 +1,8 @@
 package com.pixelpass.scan
 
 import com.pixelpass.data.session.UserSession
+import com.pixelpass.qr.PASS_CLOCK_SKEW_MILLIS
+import com.pixelpass.qr.PASS_TTL_MILLIS
 import com.pixelpass.qr.PassPayload
 import com.pixelpass.qr.PassPayloadIssuer
 import com.pixelpass.qr.PassSigner
@@ -48,13 +50,32 @@ class ScanGateTest {
     }
 
     @Test
+    fun acceptedPassCarriesItsFallbackCode() {
+        val pass = PassPayloadIssuer(signer, clock = { now }, otpSource = { "731904" })
+            .issue(session())
+
+        val accepted = ScanGate.intake(pass.encoded, now + 2_000) as ScanIntake.Accepted
+
+        assertEquals("731904", accepted.otp)
+    }
+
+    @Test
     fun stalePassIsRejectedBeforeFaceCapture() {
         val pass = PassPayloadIssuer(signer, clock = { now }).issue(session())
 
-        val result = ScanGate.intake(pass.encoded, now + 60_000)
+        val result = ScanGate.intake(pass.encoded, now + PASS_TTL_MILLIS + PASS_CLOCK_SKEW_MILLIS + 1)
 
         assertTrue(result is ScanIntake.Rejected)
         assertEquals(PassVerdict.EXPIRED, (result as ScanIntake.Rejected).verdict)
+    }
+
+    @Test
+    fun passIsStillGoodNearTheEndOfItsWindow() {
+        val pass = PassPayloadIssuer(signer, clock = { now }).issue(session())
+
+        val result = ScanGate.intake(pass.encoded, now + PASS_TTL_MILLIS - 1_000)
+
+        assertTrue(result is ScanIntake.Accepted)
     }
 
     @Test
@@ -65,6 +86,7 @@ class ScanGateTest {
         val accepted = result as ScanIntake.Accepted
         assertEquals(ScanSource.LEGACY_TOKEN, accepted.source)
         assertNull(accepted.nonce)
+        assertNull(accepted.otp)
         assertEquals("user-9", accepted.userId)
     }
 

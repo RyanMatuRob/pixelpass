@@ -29,7 +29,8 @@ class PassPayloadIssuer(
     private val signer: PassSigner,
     private val geohashSource: () -> String = { "" },
     private val clock: () -> Long = System::currentTimeMillis,
-    private val nonceSource: () -> String = { UUID.randomUUID().toString() }
+    private val nonceSource: () -> String = { UUID.randomUUID().toString() },
+    private val otpSource: () -> String = { PassOtp.generate() }
 ) {
 
     /**
@@ -42,6 +43,7 @@ class PassPayloadIssuer(
             geohash = geohashSource().takeIf { it.isNotBlank() },
             faceEmbeddingBase64 = null,
             nonce = nonceSource(),
+            otp = otpSource().takeIf { it.isNotBlank() },
             jwt = session.token,
             devicePublicKeyBase64 = signer.publicKeyBase64()
         )

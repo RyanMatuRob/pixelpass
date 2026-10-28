@@ -22,7 +22,9 @@ sealed interface ScanIntake {
         val jwt: String,
         val source: ScanSource,
         val nonce: String?,
-        val userId: String?
+        val userId: String?,
+        /** Fallback code from the signed payload, absent on legacy tokens. */
+        val otp: String? = null
     ) : ScanIntake
 
     /** The code must not continue; the guard sees [reason] on the viewfinder. */
@@ -56,7 +58,8 @@ object ScanGate {
                     jwt = payload.jwt,
                     source = ScanSource.SIGNED_PASS,
                     nonce = payload.nonce,
-                    userId = payload.userId
+                    userId = payload.userId,
+                    otp = payload.otp
                 )
             }
             return ScanIntake.Rejected(
