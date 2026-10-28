@@ -4,6 +4,7 @@ const AccessLogSchema = new mongoose.Schema({
     // Using String to accommodate IDs like "STF-001", or change to ObjectId if using Mongo's default _id
     userId: { type: String, required: true }, 
     roleCategory: { type: String, required: true }, // Required for ML context
+    nonce: { type: String, sparse: true, index: true }, // Pass nonce for single-use replay protection
     timestamp: { type: Date, default: Date.now },
     terminalCoordinate: {
         latitude: { type: Number, required: true },
