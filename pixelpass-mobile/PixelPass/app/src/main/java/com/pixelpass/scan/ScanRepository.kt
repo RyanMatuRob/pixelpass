@@ -46,6 +46,7 @@ class ScanRepository(
     ): ScanOutcome {
         val request = ScanRequest(
             token = jwt,
+            nonce = nonce,
             faceImageBase64 = faceImageBase64,
             terminalCoordinate = coordinate,
             deviceFingerprint = deviceFingerprint
@@ -104,6 +105,7 @@ class ScanRepository(
         for (row in rows) {
             val request = ScanRequest(
                 token = row.token,
+                nonce = row.nonce,
                 faceImageBase64 = row.faceImageBase64.orEmpty(),
                 terminalCoordinate = TerminalCoordinate(
                     latitude = row.latitude ?: 0.0,
