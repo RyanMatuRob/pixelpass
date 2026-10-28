@@ -58,10 +58,11 @@ const recordDenial = async ({ req, userId, roleCategory, reason }) => {
 
 router.post('/', async (req, res) => {
     try {
-        // The mobile app now sends faceImageBase64 instead of scores
+        // The mobile app sends JWT token, optional nonce, face image and device telemetry
         const { 
             token, 
-            faceImageBase64, 
+            nonce,
+            faceImageBase64,
             terminalCoordinate, 
             deviceFingerprint 
         } = req.body;
@@ -69,6 +70,21 @@ router.post('/', async (req, res) => {
         // 1. Decrypt JWT
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
         const { userId, roleCategory } = decoded;
+
+        // 1b. Check if pass nonce has already been consumed (Replay Defence across all terminals)
+        if (nonce && typeof nonce === 'string' && nonce.trim().length > 0) {
+            const replayedScan = await AccessLog.findOne({ nonce: nonce.trim() });
+            if (replayedScan) {
+                const refusal = 'This pass has already been used (Replay Attempt)';
+                await recordDenial({ req, userId, roleCategory, reason: refusal });
+                return res.status(403).json({
+                    access: 'DENIED',
+                    decision: 'DENIED',
+                    reason: refusal,
+                    anomalyReason: refusal
+                });
+            }
+        }
 
         // 2. Fetch the Trusted Reference Photo from the Database
         let user;
@@ -158,6 +174,7 @@ router.post('/', async (req, res) => {
         const log = new AccessLog({
             userId,
             roleCategory,
+            nonce: nonce && typeof nonce === 'string' ? nonce.trim() : undefined,
             terminalCoordinate,
             deviceFingerprint,
             biometricConfidence: mlData.biometric_confidence,
