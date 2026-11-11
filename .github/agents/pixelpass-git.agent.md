@@ -510,6 +510,7 @@ This is the running summary for every issue and every pull request. It is append
 | #124 | 1. Mobile App Implementation | #127 | Merged 2026-10-28 | Disable refresh button while pass countdown is active, re-enabling on expiry or error |
 | #125 | 3. Backend Implementation | #128 | Merged 2026-10-28 | Admin user registration page with individual forms and batch CSV import preview |
 | #126 | 3. Backend Implementation | #128 | Merged 2026-10-28 | POST /api/users and POST /api/users/batch endpoints for individual and bulk user creation |
+| #138 | 4. Testing and Deployment | #139 | Open | Azure credit checkpoint script with exit-code gating; the native budget stays blocked by cross-tenant billing RBAC |
 
 
 
